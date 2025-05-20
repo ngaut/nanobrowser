@@ -163,6 +163,85 @@ Nanobrowser allows you to configure different LLM models for each agent to balan
 
 > **Tip**: Feel free to experiment with your own model configurations! Found a great combination? Share it with the community in our [Discord](https://discord.gg/NN3ABHggMK) to help others optimize their setup.
 
+### Using Ollama with Nanobrowser
+
+To use Ollama with Nanobrowser, you need to configure Ollama to accept requests from Chrome extensions. Here's how to set it up:
+
+#### Setting up Ollama
+
+1. **Install Ollama** (if not already installed):
+   - macOS: `brew install ollama`
+   - Linux: Follow instructions at [ollama.com](https://ollama.com)
+   - Windows: Use the installer from [ollama.com](https://ollama.com)
+
+2. **Configure Ollama to accept Chrome extension requests**:
+
+   For the best experience, create a startup script to ensure proper configuration every time:
+
+   **macOS/Linux Script** (save as `start_ollama.sh`):
+   ```bash
+   #!/bin/bash
+   # Kill any running Ollama instances
+   pkill -f ollama
+   
+   # Set the OLLAMA_ORIGINS environment variable to allow Chrome extensions
+   export OLLAMA_ORIGINS="chrome-extension://*"
+   
+   # Start Ollama
+   echo "Starting Ollama with Chrome extension support..."
+   ollama serve
+   ```
+
+   Make the script executable:
+   ```bash
+   chmod +x start_ollama.sh
+   ```
+
+   **Windows Script** (save as `start_ollama.bat`):
+   ```batch
+   @echo off
+   
+   rem Kill any running Ollama instances
+   taskkill /f /im ollama.exe 2>nul
+   
+   rem Set the OLLAMA_ORIGINS environment variable
+   set OLLAMA_ORIGINS=chrome-extension://*
+   
+   rem Start Ollama
+   echo Starting Ollama with Chrome extension support...
+   ollama serve
+   ```
+
+3. **Start Ollama** using the script you created:
+   - macOS/Linux: `./start_ollama.sh`
+   - Windows: Double-click `start_ollama.bat` or run it from Command Prompt
+
+4. **Pull your desired models**:
+   Once Ollama is running, open a new terminal and pull your desired models:
+   ```bash
+   ollama pull qwen3:14b
+   ollama pull falcon3:10b
+   ollama pull mistral-small:24b
+   ```
+
+#### Configuring Nanobrowser to use Ollama
+
+1. Open Nanobrowser settings by clicking the ⚙️ icon
+2. Add Ollama as a provider
+3. Set the Base URL to `http://localhost:11434` (default Ollama address)
+4. Select your pulled models for each agent
+5. Click "Test Connection" to verify everything is working correctly
+
+#### Troubleshooting
+
+- **403 Forbidden errors**: Ensure you've started Ollama with the `OLLAMA_ORIGINS` environment variable set correctly
+- **Model not found errors**: Make sure you've pulled the model you're trying to use
+- **Version compatibility errors**: Upgrade Ollama to the latest version with `brew upgrade ollama` (macOS) or download the latest version from the website
+
+> **Note**: For security reasons, Ollama only accepts connections from trusted origins. The `OLLAMA_ORIGINS` environment variable tells Ollama to trust requests from Chrome extensions.
+
+> **Tip**: Running Ollama with Chrome extension support does not compromise your security - it only allows your locally installed extensions to connect to your locally running Ollama instance.
+
 ## 💡 See It In Action
 
 Here are some powerful tasks you can accomplish with just a sentence:
