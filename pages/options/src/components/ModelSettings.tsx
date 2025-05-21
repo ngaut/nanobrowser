@@ -895,38 +895,35 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
 
   // Function to load Ollama models for a provider
   const loadOllamaModels = async (providerId: string, config: ProviderConfig) => {
-    if (config.type === ProviderTypeEnum.Ollama && config.baseUrl) {
-      try {
-        const models = await fetchOllamaModels(config.baseUrl);
-        setOllamaModels(prev => ({
-          ...prev,
-          [providerId]: models,
-        }));
+    if (!config.baseUrl) return;
+    setIsTesting(prev => ({ ...prev, [providerId]: true }));
+    try {
+      const modelsFromApi = await fetchOllamaModels(config.baseUrl);
+      setOllamaModels(prev => ({ ...prev, [providerId]: modelsFromApi }));
 
-        // If we got models and the current provider doesn't have any models set,
-        // update the provider config with these models
-        if (models.length > 0 && (!config.modelNames || config.modelNames.length === 0)) {
-          const updatedConfig = {
-            ...config,
-            modelNames: models,
-          };
+      // Update the provider's modelNames in the main 'providers' state
+      setProviders(prev => ({
+        ...prev,
+        [providerId]: {
+          ...prev[providerId],
+          modelNames: modelsFromApi, // Replace with fetched models
+        },
+      }));
+      // Mark the provider as modified so the user can save it
+      setModifiedProviders(prev => new Set(prev).add(providerId));
 
-          // Update the local state
-          setProviders(prev => ({
-            ...prev,
-            [providerId]: updatedConfig,
-          }));
-
-          // Mark as modified
-          setModifiedProviders(prev => {
-            const newSet = new Set(prev);
-            newSet.add(providerId);
-            return newSet;
-          });
-        }
-      } catch (error) {
-        console.error(`Error loading Ollama models for ${providerId}:`, error);
-      }
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: { success: true, details: `Found ${modelsFromApi.length} models.` },
+      }));
+    } catch (error) {
+      console.error(`Error loading Ollama models for ${providerId}:`, error);
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: { success: false, error: (error as Error).message },
+      }));
+    } finally {
+      setIsTesting(prev => ({ ...prev, [providerId]: false }));
     }
   };
 

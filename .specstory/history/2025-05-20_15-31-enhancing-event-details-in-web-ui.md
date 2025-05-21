@@ -13980,7 +13980,682 @@ Read file: chrome-extension/src/background/agent/messages/service.ts
 
 The `addPlan` method looks correct:
 ```typescript
-  public addPlan(plan?: string,
+  public addPlan(plan?: string, position?: number): void {
+    if (plan) {
+      const msg = new AIMessage({ content: `<plan>${plan}</plan>` });
+      this.addMessageWithTokens(msg, null, position);
+    }
+  }
+```
+It creates an `AIMessage` and adds it to the history. This should be discoverable by the `NavigatorAgent`'s logic:
+```typescript
+      // In NavigatorAgent.ts
+      if (msg instanceof AIMessage && typeof msg.content === 'string') {
+            // A simple heuristic: if the message content looks like a plan (e.g. starts with numbers or bullet points)
+            // This is a placeholder; ideally, we'd look for a specific marker or structure from Planner STEP_OK event data
+            // For now, let's assume the content of the AIMessage from Planner is the plan.
+            // A more robust way would be to check the detailsObject of the event that generated this message.
+            if (msg.content.match(/^(\\d+\\.|\\*|-)\\s+/m)) { // Basic check for list-like structure
+                 activePlan = msg.content;
+                 break;
+            }
+        }
+```
+The potential issue here is that `NavigatorAgent`'s heuristic `msg.content.match(/^(\\d+\\.|\\*|-)\\s+/m)` (looking for content starting with a number/bullet) will **not** match the plan string added by `addPlan`, because `addPlan` wraps the content with `<plan>` tags. For example, `"<plan>1. Step one...</plan>"`. This string does not start with a digit or bullet.
+
+This is likely the reason `activePlan` is consistently "not found." The `PlannerAgent` correctly calls `addPlan`, which adds an `AIMessage` with content like `<plan>THE_ACTUAL_PLAN</plan>`. But the `NavigatorAgent`'s current check for an `AIMessage` containing the plan is looking for a plan that *starts* with a list item, not one wrapped in `<plan>` tags.
+
+**The Fix:**
+
+We need to adjust the `NavigatorAgent` (and `ValidatorAgent`, as it uses similar logic for `originalPlan`) to correctly identify the plan message added by `MessageManager.addPlan`.
+
+There are two main ways `NavigatorAgent` tries to find the plan:
+1.  The heuristic of an `AIMessage` starting with a list item (which we now see is flawed for plans added by `addPlan`).
+2.  The comment in `NavigatorAgent` says: *"A more robust way would be to check the detailsObject of the event that generated this message."* This isn't directly applicable here because we're iterating `BaseMessage` objects from `MessageManager`, which don't have `detailsObject`.
+
+The most straightforward fix is to make the `NavigatorAgent` look for an `AIMessage` whose content *contains* the `<plan>...</plan>` structure, or more simply, starts with `<plan>`.
+
+Let's modify `NavigatorAgent.ts` and `ValidatorAgent.ts` to check for `msg.content.startsWith('<plan>')`.
+
+---
+
+```diff
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+          const msg = allMessages[i];
+-         // Assuming planner output is an AIMessage and contains plan steps in its content
+-         // This might need adjustment based on how Planner STEP_OK is structured
+-         if (msg instanceof AIMessage && typeof msg.content === 'string') {
+-             // A simple heuristic: if the message content looks like a plan (e.g. starts with numbers or bullet points)
+-             // This is a placeholder; ideally, we'd look for a specific marker or structure from Planner STEP_OK event data
+-             // For now, let's assume the content of the AIMessage from Planner is the plan.
+-             // A more robust way would be to check the detailsObject of the event that generated this message.
+-             if (msg.content.match(/^(\d+\.|\*|-)\s+/m)) { // Basic check for list-like structure
++         if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
+            activePlan = msg.content;
+            break;
+-             }
+          }
+        }
+```
+
+---
+
+Now for `ValidatorAgent.ts`, to update how it finds `originalPlan`.
+
+---
+
+```diff
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+          const msg = allMessages[i];
+-         // Heuristic: Assuming Planner output is an AIMessage and its content is the plan.
+-         // A more robust method would involve checking event detailsObject if messages stored richer info.
+-         if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.match(/^(\d+\.|\*|-)\s+/m)) {
++         if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
+            originalPlan = msg.content;
+            break;
+```
+
+---
+
+With these changes, both `NavigatorAgent` and `ValidatorAgent` should now correctly identify the plan message that `PlannerAgent` adds via `MessageManager.addPlan()`.
+
+This should resolve the issue of "Active plan not found." appearing consistently.
+
+Please test again. We're hoping to see `activePlan` correctly populated with the content like `<plan>1. Step one...</plan>` in the `Navigator - step.start` inputs.
+
+---
+
+_**User**_
+
+it works, git commit and push
+
+---
+
+_**Assistant**_
+
+Great! I'm glad we got to the bottom of it and it's working as expected now.
+
+I'll commit these changes with a message summarizing what we did and then push them.
+
+---
+
+Model provided invalid arguments to terminal tool.
+
+---
+
+Ah, right. The git commit message cannot contain newline characters when passed as a command line argument directly like that. I'll reformat the commit message to be a single line.
+
+---
+
+```bash
+git add . && git commit -m "Fix: Ensure agents correctly find taskInstruction and activePlan. Corrected prefixes and plan search logic in agents. Ensured PlannerAgent adds plan to MessageManager." && git push
+```
+
+```
+◼ Cleaning up temporary files...
+✔ Backed up original state in git stash (e14a0df)
+✔ Running tasks for staged files...
+✔ Applying modifications from tasks...
+✔ Cleaning up temporary files...
+[master 33d410e] Fix: Ensure agents correctly find taskInstruction and activePlan. Corrected prefixes and p
+lan search logic in agents. Ensured PlannerAgent adds plan to MessageManager.
+ 6 files changed, 14097 insertions(+), 3 deletions(-)
+ create mode 100644 .cursorindexingignore
+ create mode 100644 .specstory/history/2025-05-20_15-31-enhancing-event-details-in-web-ui.md
+Enumerating objects: 31, done.
+Counting objects: 100% (31/31), done.
+Delta compression using up to 10 threads
+Compressing objects: 100% (16/16), done.
+Writing objects: 100% (18/18), 116.03 KiB | 444.00 KiB/s, done.
+Total 18 (delta 11), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (11/11), completed with 11 local objects.
+To github.com:ngaut/nanobrowser.git
+   4d68627..33d410e  master -> master
+
+```
+
+---
+
+The changes have been committed and pushed successfully.
+
+All issues related to displaying `STEP_START` events and populating their `inputs` (both `taskInstruction` and `activePlan`) should now be resolved. The UI should consistently show the correct information for these events.
+
+Is there anything else I can help you with?
+
+---
+
+_**User**_
+
+it seems there are bugs on persistent configuration.it can not persistent or load configuration correctly.
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+Okay, it looks like there might be issues with how configurations are persisted and loaded on the Settings page.
+
+To figure this out, I'll need to understand how the settings are managed. I'll start by looking for the code related to the settings/options page, likely in the `pages/options` directory. I'll then investigate how it saves data (e.g., when you add a provider, change a model, or adjust temperature) and how it loads this data when the page opens.
+
+Let's try to find the main component for the settings page.
+
+---
+
+<details>
+            <summary>Searched codebase "Options.tsx" • **5** results</summary>
+        
+| File |
+|------|
+| `undefined` |
+| `undefined` |
+| `undefined` |
+| `undefined` |
+| `undefined` |
+
+</details>
+
+---
+
+It seems `pages/options/src/Options.tsx` is the main component for the settings page.
+
+I'll now read this file to understand how it loads and saves settings, and to identify potential areas where persistence might be failing.
+
+---
+
+Read file: pages/options/src/Options.tsx
+
+---
+
+`Options.tsx` is the main layout and handles tab navigation. The actual settings logic for models seems to be in `ModelSettings.tsx` (imported as `ModelSettings`).
+
+Let's examine `pages/options/src/components/ModelSettings.tsx`. This is where the loading and saving of LLM provider configurations and agent model settings should be happening.
+
+---
+
+Read file: pages/options/src/components/ModelSettings.tsx
+
+---
+
+This `ModelSettings.tsx` file is quite large and handles a lot of state. Let's focus on how provider configurations and agent model settings are loaded and saved.
+
+**Loading Data:**
+
+1.  **Providers (`useEffect` for `loadProviders`):**
+    *   Calls `llmProviderStore.getAllProviders()` to get all stored provider configurations.
+    *   Sets them to the `providers` state.
+    *   It correctly tracks which providers are from storage using `providersFromStorage`.
+    *   The log `console.log('allProviders', allProviders);` is helpful.
+    *   If an Ollama provider is found, it calls `loadOllamaModels` (which in turn calls `fetchOllamaModels`).
+
+2.  **Agent Models (`useEffect` for `loadAgentModels`):**
+    *   Iterates through `AgentNameEnum` (Planner, Navigator, Validator).
+    *   Calls `agentModelStore.getAgentModel(agent)` for each.
+    *   If a config is found, it sets `selectedModels` and `modelParameters` (temperature, topP), and `reasoningEffort`.
+
+**Saving Data:**
+
+1.  **Provider Config (`handleSave` function):**
+    *   This function is called when the "Save" button for a specific provider is clicked.
+    *   It calls `llmProviderStore.addProvider(provider, providers[provider])`.
+    *   It updates `providersFromStorage` and clears `modifiedProviders`.
+    *   The "Save" button is enabled if `modifiedProviders.has(provider)`.
+
+2.  **Agent Model Selection (`handleModelChange` function):**
+    *   Called when a model is selected for an agent (Planner, Navigator, Validator).
+    *   Updates `selectedModels` state.
+    *   Crucially, it calls `agentModelStore.setAgentModel(agentName, { modelName: modelValue, parameters: existingParams, reasoningEffort: existingReasoningEffort })`. This directly saves the selected model to storage.
+
+3.  **Agent Model Parameters (`handleParameterChange`, `handleReasoningEffortChange` functions):**
+    *   Called when temperature, topP, or reasoning effort sliders/selectors are changed.
+    *   Updates the local state (`modelParameters`, `reasoningEffort`).
+    *   They also directly call `agentModelStore.setAgentModel(...)` to save the updated parameters to storage.
+
+**Potential Problem Areas based on the screenshot and code:**
+
+1.  **Initial State vs. Loaded State for Providers:**
+    *   The `useEffect` for `loadProviders` does `setProviders(allProviders);`. If `allProviders` from storage is empty (e.g., first run or data loss), the `providers` state will be empty.
+    *   The screenshot shows an "Ollama" provider. Is this a default provider that should appear even if nothing is in storage, or was it added by the user?
+        *   The code for adding providers (`addCustomProvider`, `addAzureProvider`, `addBuiltInProvider`) suggests that providers are added explicitly by user action.
+        *   The line `// Only use providers from storage, don't add default ones` in `loadProviders` confirms that if storage is empty, no providers are shown initially.
+    *   If the Ollama provider in the screenshot was previously saved but isn't loading, then `llmProviderStore.getAllProviders()` might be failing or returning an empty object when it shouldn't.
+
+2.  **Model List for Ollama:**
+    *   The "Models" input for Ollama shows `qwen2.5vl:7b`. This model name is likely typed in or selected.
+    *   The `loadOllamaModels` function (called during `loadProviders`) is responsible for fetching the list of available models from the Ollama instance (`fetchOllamaModels(config.baseUrl)`).
+        *   If this fetch fails or returns an empty list, then the dropdown for selecting Ollama models for agents might be empty or behave unexpectedly.
+        *   The input field for adding models to an Ollama provider (`newModelInputs`, `addModel`, `removeModel` functions) seems to be for manually curating the list of models *associated with that provider entry in the settings*, which are then saved with the provider config. This is separate from auto-detecting models from an Ollama instance.
+
+3.  **Agent Model "Choose model"**:
+    *   The screenshot shows "Choose model" for the Navigator, while Planner has "Ollama > qwen2.5vl:7b".
+    *   If the Planner's model was previously selected and saved, `agentModelStore.getAgentModel(AgentNameEnum.Planner)` should have loaded it.
+    *   If Navigator's model was also set but now shows "Choose model", then either:
+        *   It was never saved correctly.
+        *   `agentModelStore.getAgentModel(AgentNameEnum.Navigator)` is failing or returning no config for Navigator.
+        *   The `availableModels` list (derived from `getAvailableModelsCallback`) might not contain the previously selected model, causing the dropdown to reset. `getAvailableModelsCallback` iterates through `llmProviderStore.getAllProviders()`. If the provider or its models are missing there, the agent's selected model might become invalid.
+
+**Debugging Steps & Questions:**
+
+1.  **Check Browser's Developer Console:**
+    *   Are there any errors logged when the Options page loads, especially from `llmProviderStore` or `agentModelStore`?
+    *   What does `console.log('allProviders', allProviders);` in `ModelSettings.tsx` (around line 70) show when the page loads? This is critical. Does it show the "Ollama" provider and its configured models?
+    *   Are there errors when saving settings (e.g., clicking "Save" for a provider, or selecting a model for an agent)?
+
+2.  **Storage Inspection (More Advanced):**
+    *   Can you inspect the browser's extension storage (e.g., using developer tools for the extension background page or a dedicated extension storage inspector)?
+        *   What data exists under keys related to `llmProviderStore` (e.g., `llm_providers`)?
+        *   What data exists for `agentModelStore` (e.g., `agent_Planner`, `agent_Navigator`)?
+
+3.  **Scenario Analysis:**
+    *   **If the Ollama provider was manually added and saved:**
+        *   Does it appear in the `allProviders` log?
+        *   If you modify its API key or Base URL and click "Save", does it persist after a page refresh?
+        *   Does the "Models" list (e.g., `qwen2.5vl:7b`) for this Ollama provider persist after saving and refreshing?
+    *   **For the Planner agent model ("Ollama > qwen2.5vl:7b"):**
+        *   If you change it to something else, save (which happens automatically on change for agent models), and then refresh, does it revert, or does the new selection stick?
+    *   **For the Navigator agent model ("Choose model"):**
+        *   If you select a model for it, does it save? What happens after a refresh?
+
+**Initial Suspicion:**
+
+My initial suspicion is that there might be an issue with `llmProviderStore.getAllProviders()` either not correctly retrieving all saved providers, or an error occurs during its execution which leads to an empty `providers` state being set. If the providers aren't loaded correctly, then the `availableModels` list will be incorrect, which in turn can cause the agent model dropdowns to reset or show "Choose model" if their previously selected model is no longer considered available.
+
+The `console.log('allProviders', allProviders);` output will be very telling.
+
+Let's start by checking the console logs on the Options page when it loads. What do you see?
+
+---
+
+Could not find file 'packages/storage/lib/llm/provider/store.ts' in the workspace.
+
+---
+
+My apologies, I assumed the path. Let me find the correct path for `llmProviderStore`.
+
+---
+
+<details>
+            <summary>Searched codebase "llmProviderStore" • **0** results</summary>
+        
+No results found
+</details>
+
+---
+
+It seems the file search was interrupted again. I'll try a grep search for "llmProviderStore" to find where it's defined.
+
+---
+
+<details>
+            <summary>Grep search for "llmProviderStore" • **6** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L12 | `llmProviderStore,` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L78 | `const allProviders = await llmProviderStore.getAllProviders();` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L194 | `const storedProviders = await llmProviderStore.getAllProviders();` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L452 | `await llmProviderStore.setProvider(provider, configToSave as ProviderConfig);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L481 | `await llmProviderStore.removeProvider(provider);` |
+| `file:///Users/max/projects/nanobrowser/packages/storage/lib/settings/llmProviders.ts` | L234 | `export const llmProviderStore: LLMProviderStorage = {` |
+| `file:///Users/max/projects/nanobrowser/packages/storage/lib/settings/llmProviders.ts` | L288 | `console.log(`[llmProviderStore.setProvider] Saving config for ${providerId}:`, JSON.stringify(completeConfig));` |
+| `file:///Users/max/projects/nanobrowser/packages/storage/lib/settings/agentModels.ts` | L8 | `// providerId, the key of the provider in the llmProviderStore, not the provider name` |
+| `file:///Users/max/projects/nanobrowser/chrome-extension/src/background/index.ts` | L6 | `llmProviderStore,` |
+| `file:///Users/max/projects/nanobrowser/chrome-extension/src/background/index.ts` | L207 | `const providers = await llmProviderStore.getAllProviders();` |
+| `file:///Users/max/projects/nanobrowser/.specstory/history/2025-05-20_15-31-enhancing-event-details-in-web-ui.md` | L6811 | `export const llmProviderStore: LLMProviderStorage = {` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L12 | `llmProviderStore,` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L78 | `const allProviders = await llmProviderStore.getAllProviders();` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L194 | `const storedProviders = await llmProviderStore.getAllProviders();` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L452 | `await llmProviderStore.setProvider(provider, configToSave as ProviderConfig);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L481 | `await llmProviderStore.removeProvider(provider);` |
+
+</details>
+
+---
+
+Okay, `llmProviderStore` is defined in `packages/storage/lib/settings/llmProviders.ts`.
+Let's also find where `agentModelStore` is defined.
+
+---
+
+<details>
+            <summary>Grep search for "agentModelStore" • **4** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L13 | `agentModelStore,` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L117 | `const config = await agentModelStore.getAgentModel(agent);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L571 | `await agentModelStore.setAgentModel(agentName, {` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L579 | `await agentModelStore.resetAgentModel(agentName);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L599 | `await agentModelStore.setAgentModel(agentName, {` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L650 | `await agentModelStore.setAgentModel(agentName, {` |
+| `file:///Users/max/projects/nanobrowser/packages/storage/lib/settings/agentModels.ts` | L49 | `export const agentModelStore: AgentModelStorage = {` |
+| `file:///Users/max/projects/nanobrowser/chrome-extension/src/background/index.ts` | L2 | `agentModelStore,` |
+| `file:///Users/max/projects/nanobrowser/chrome-extension/src/background/index.ts` | L212 | `const agentModels = await agentModelStore.getAllAgentModels();` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L13 | `agentModelStore,` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L117 | `const config = await agentModelStore.getAgentModel(agent);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L571 | `await agentModelStore.setAgentModel(agentName, {` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L579 | `await agentModelStore.resetAgentModel(agentName);` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L599 | `await agentModelStore.setAgentModel(agentName, {` |
+| `file:///Users/max/projects/nanobrowser/pages/options/src/components/ModelSettings.tsx` | L650 | `await agentModelStore.setAgentModel(agentName, {` |
+
+</details>
+
+---
+
+`agentModelStore` is defined in `packages/storage/lib/settings/agentModels.ts`.
+
+Now I'll read both files to understand their storage mechanisms, especially the keys they use and how `getAllProviders` and `getAgentModel` work. This will help in guiding you to check the correct storage locations and interpret the console logs.
+
+---
+
+Read file: packages/storage/lib/settings/llmProviders.ts
+
+---
+
+Read file: packages/storage/lib/settings/agentModels.ts
+
+---
+
+Here's what I've gathered from the storage files:
+
+**`llmProviderStore` (in `packages/storage/lib/settings/llmProviders.ts`):**
+
+*   **Storage Key**: Uses `'llm-api-keys'` for backward compatibility. The data is stored as an object `{ providers: { /* providerId: providerConfig, ... */ } }`.
+*   **`getAllProviders()`**: This method retrieves the entire `LLMKeyRecord` and should return the `providers` object.
+    *   It also has an `ensureBackwardCompatibility` function that tries to fill in missing fields like `name`, `type`, and `modelNames` (for non-Azure) or `azureDeploymentNames` (for Azure). This is important because if old data is missing these, the compatibility layer *should* fix them up.
+*   **`setProvider(providerId, config)`**: Saves the configuration for a single provider.
+*   **Ollama model fetching**: Contains `fetchOllamaModels(baseUrl)` which is used to get models from an Ollama instance. This is separate from the `modelNames` stored within a provider's config (which seems to be a user-curated list for some provider types).
+
+**`agentModelStore` (in `packages/storage/lib/settings/agentModels.ts`):**
+
+*   **Storage Key**: Uses `'agent-models'`. The data is stored as an object `{ agents: { /* agentName: modelConfig, ... */ } }`.
+*   **`getAgentModel(agent)`**: Retrieves the `ModelConfig` for a specific agent. It also merges default parameters.
+*   **`setAgentModel(agent, config)`**: Saves the `ModelConfig` for an agent. It validates that `provider` and `modelName` are specified. It also merges default parameters.
+
+**Key Observations for Debugging:**
+
+1.  **`llmProviderStore`'s Backward Compatibility:** The `ensureBackwardCompatibility` function is crucial. If this has a bug or doesn't cover all cases, providers loaded from storage might be incomplete, which could affect how they're displayed or used.
+    *   For example, if an Ollama provider was saved without a `type` or `name`, this function should add them. If `modelNames` was missing, it should try to populate it from `llmProviderModelNames[providerId]`.
+
+2.  **Ollama `modelNames` vs. `fetchOllamaModels`:**
+    *   The `ProviderConfig` for Ollama can have a `modelNames` array. This array is what's edited in the UI when you type model names into the "Models" input field for an Ollama provider and save.
+    *   `fetchOllamaModels` is used by `ModelSettings.tsx` (via `loadOllamaModels`) to dynamically populate a temporary list (`ollamaModels` state) if an Ollama provider's `baseUrl` is set. This fetched list is then seemingly used to enhance the `modelNames` for that provider *in the UI state* but it's not clear if it directly overwrites the persisted `modelNames` in the `ProviderConfig` without a "Save".
+    *   The `availableModels` list used for agent model dropdowns is built from the `modelNames` (or `azureDeploymentNames`) stored within each *loaded* provider's configuration. If an Ollama provider is loaded from storage but its `modelNames` array is empty or incorrect, models won't appear for it in the agent dropdowns.
+
+**Focusing on the Ollama Provider in the Screenshot:**
+
+*   It's named "Ollama".
+*   Base URL is `http://localhost:11434`.
+*   It has `qwen2.5vl:7b` in its "Models" list.
+
+**Scenario: What could go wrong with the Ollama provider?**
+
+1.  **Saving:** When you add "qwen2.5vl:7b" to the Ollama provider's model list and click "Save":
+    *   `handleSave` in `ModelSettings.tsx` calls `llmProviderStore.setProvider('Ollama', config)`.
+    *   `llmProviderStore.setProvider` should save this configuration, including the `modelNames: ['qwen2.5vl:7b']` array, under the `'llm-api-keys'` storage key.
+
+2.  **Loading:** When the page reloads:
+    *   `loadProviders` in `ModelSettings.tsx` calls `llmProviderStore.getAllProviders()`.
+    *   This should return the saved Ollama config, including `modelNames: ['qwen2.5vl:7b']`.
+    *   The `console.log('allProviders', allProviders)` should show this.
+    *   `loadOllamaModels` is then called. It will use `http://localhost:11434` to fetch models. Let's say it fetches `['llama3:latest', 'qwen2.5vl:7b']`.
+    *   The `ollamaModels` state in `ModelSettings.tsx` will be updated for the 'Ollama' providerId.
+    *   The UI then needs to reconcile the *persisted* `modelNames` from the provider's config (which should be `['qwen2.5vl:7b']`) with the *dynamically fetched* models. The current UI seems to directly display and allow editing of the persisted `modelNames`.
+
+**If the Ollama provider's model list (`qwen2.5vl:7b`) is not persisting:**
+
+*   **Failure in `llmProviderStore.setProvider`**: It might not be saving the `modelNames` array correctly.
+*   **Issue in `llmProviderStore.getAllProviders` or `ensureBackwardCompatibility`**: It might be losing/overwriting the `modelNames` when loading. For instance, if `ensureBackwardCompatibility` wrongly decides that `modelNames` for Ollama should be reset to a default from `llmProviderModelNames['Ollama']` and that default is empty or different.
+
+**If the Agent Model Selection (e.g., Planner using "Ollama > qwen2.5vl:7b") is not persisting:**
+
+*   **`agentModelStore.setAgentModel` failure**: Less likely if other parameters like temperature save.
+*   **Dependency on `availableModels` during load**: When `loadAgentModels` runs, it sets the `selectedModels`. If, at that time, "Ollama > qwen2.5vl:7b" is *not* in the `availableModels` list (because the Ollama provider itself or its `modelNames` didn't load correctly from `llmProviderStore`), the UI might reset the selection for Planner. `ModelSettings.tsx` does:
+    ```typescript
+    // Inside loadAgentModels
+    if (config) {
+        models[agent] = config.modelName; // config.modelName would be "Ollama > qwen2.5vl:7b"
+        // ...
+    }
+    setSelectedModels(models);
+    ```
+    The `renderModelSelect` function then uses `selectedModels[agentName]` as the value for its dropdown. If this value isn't a valid option in its dynamically generated list of options (from `availableModels`), the dropdown might default to "Choose model" or the first available option.
+
+**Next Steps - Prioritizing Console Output:**
+
+The most crucial piece of information right now is the output of `console.log('allProviders', allProviders);` in `ModelSettings.tsx` (around line 70) when the Options page loads *after* you've tried to save the Ollama provider with the `qwen2.5vl:7b` model.
+
+1.  **Save the Ollama provider** with "qwen2.5vl:7b" in its model list.
+2.  **Refresh the Options page.**
+3.  **Open the Developer Console** for the Options page.
+4.  **Find the `allProviders` log.** What does it show for the "Ollama" provider? Specifically, what is its `modelNames` array?
+
+This will tell us if the provider configuration itself (including its list of models) is being loaded correctly from storage. If it is, then the problem likely lies in how agent model selections are reconciled with this list. If it's not, the problem is deeper in `llmProviderStore`.
+
+---
+
+_**User**_
+
+ollama should list all models automatically
+
+---
+
+_**Assistant**_
+
+You're right, ideally, for an Ollama provider, the system should automatically list the models available from the configured Ollama instance, and this list should be the primary source for populating the "Models" field and the agent model selection dropdowns.
+
+Let's look at how this is currently handled in `ModelSettings.tsx` and how we can improve it.
+
+**Current Behavior (from our previous analysis):**
+
+1.  **Loading Providers (`loadProviders` in `ModelSettings.tsx`):**
+    *   Gets all provider configs from `llmProviderStore.getAllProviders()`.
+    *   For each Ollama provider found, it calls `loadOllamaModels(providerId, config)`.
+
+2.  **`loadOllamaModels(providerId, config)` (in `ModelSettings.tsx`):**
+    *   Calls `fetchOllamaModels(config.baseUrl)` (which is defined in `packages/storage/lib/settings/llmProviders.ts`).
+    *   `fetchOllamaModels` makes an API call to `http://<ollama_base_url>/api/tags`.
+    *   The result (a list of model names like `['llama3:latest', 'qwen2.5vl:7b']`) is stored in the `ollamaModels` component state: `setOllamaModels(prev => ({ ...prev, [providerId]: modelsFromApi }));`.
+
+3.  **Provider's `modelNames` Array:**
+    *   Each `ProviderConfig` (including for Ollama) has an optional `modelNames?: string[]` field. This is what you edit in the UI when you type "qwen2.5vl:7b" into the "Models" input for the Ollama provider. This array is saved with the provider config by `llmProviderStore`.
+
+4.  **`availableModels` for Agent Dropdowns:**
+    *   The `availableModels` list (used to populate the "Model" dropdown for Planner, Navigator, etc.) is built by `getAvailableModelsCallback`.
+    *   `getAvailableModelsCallback` iterates through the providers loaded from `llmProviderStore` and uses *their persisted `modelNames` array* (or `azureDeploymentNames` for Azure). It does **not** directly use the dynamically fetched list from `ollamaModels` state for this purpose.
+
+**The Disconnect:**
+
+The list of models fetched from the Ollama API (`/api/tags`) is stored in the `ollamaModels` state but isn't automatically a) populating the "Models" input field of the Ollama provider for display, or b) being saved back into that provider's `modelNames` configuration in storage, or c) directly feeding the `availableModels` list for agent selection.
+
+The user has to manually type the model names into the "Models" input field for the Ollama provider, and these manually entered names are what get saved and then used for agent selection. This manual step is prone to typos and doesn't reflect the true list of available models from the Ollama instance.
+
+**Desired Behavior:**
+
+1.  When an Ollama provider is configured (especially its Base URL), the system should fetch the list of models from `/api/tags`.
+2.  This fetched list should ideally be the **authoritative list of models for that Ollama provider.**
+3.  This list should be displayed (perhaps as read-only tags, or automatically populated into the "Models" input if it's made read-only for Ollama).
+4.  This list should be used to populate the `availableModels` for agent selection dropdowns.
+5.  The persisted `modelNames` in the Ollama `ProviderConfig` should ideally be kept in sync with this fetched list, or perhaps the concept of manually adding `modelNames` to an Ollama provider config should be removed if auto-detection is reliable.
+
+**Proposed Changes:**
+
+**Option 1 (Simpler, Leverages existing structure):**
+
+*   **Modify `loadOllamaModels` in `ModelSettings.tsx`:**
+    *   After successfully fetching models via `fetchOllamaModels`, not only call `setOllamaModels` but also update the main `providers` state for that Ollama provider to replace its `modelNames` array with the fetched list.
+    *   Mark this provider as modified so the "Save" button appears, or automatically trigger a save. This ensures the fetched list gets persisted.
+
+    ```typescript
+    // Inside ModelSettings.tsx
+    const loadOllamaModels = async (providerId: string, config: ProviderConfig) => {
+      if (!config.baseUrl) return;
+      setIsTesting(prev => ({ ...prev, [providerId]: true }));
+      try {
+        const modelsFromApi = await fetchOllamaModels(config.baseUrl);
+        setOllamaModels(prev => ({ ...prev, [providerId]: modelsFromApi }));
+
+        // --- New Part ---
+        setProviders(prev => ({
+          ...prev,
+          [providerId]: {
+            ...prev[providerId],
+            modelNames: modelsFromApi, // Update the provider's modelNames
+          },
+        }));
+        setModifiedProviders(prev => new Set(prev).add(providerId)); // Mark for saving
+        // Optionally, auto-save here if desired, or rely on user clicking "Save"
+        // await handleSave(providerId); 
+        // --- End New Part ---
+
+        setTestResults(prev => ({
+          ...prev,
+          [providerId]: { success: true, details: `Found ${modelsFromApi.length} models.` },
+        }));
+      } catch (error) {
+        console.error(`Error loading Ollama models for ${providerId}:`, error);
+        setTestResults(prev => ({
+          ...prev,
+          [providerId]: { success: false, error: (error as Error).message },
+        }));
+      } finally {
+        setIsTesting(prev => ({ ...prev, [providerId]: false }));
+      }
+    };
+    ```
+
+*   **UI for Ollama "Models" input:**
+    *   Consider making the "Models" input field for Ollama providers read-only or visually distinct, indicating it's auto-populated. The current tag-like input could still display them. The "Add model name" input part would become irrelevant for Ollama.
+
+**Option 2 (More Comprehensive Refactor):**
+
+*   **Change `getAvailableModelsCallback`:**
+    *   For Ollama providers, instead of using `config.modelNames`, it should use the models from the `ollamaModels` state (which holds the dynamically fetched list). This means `ollamaModels` state needs to be reliably populated when the page loads and when Ollama providers are added/modified.
+*   **Persisting Fetched Ollama Models:**
+    *   Decide if the fetched Ollama models should still be saved into the `ProviderConfig`'s `modelNames` array. If `getAvailableModelsCallback` directly uses the fetched list, persisting it becomes less critical for agent selection but might still be useful for offline viewing or consistency.
+*   **UI Update:** The "Models" field for Ollama should primarily display the fetched models. The manual add/remove model UI for Ollama providers might be removed or disabled.
+
+**Recommendation:**
+
+Option 1 is less disruptive and reuses more of the existing save/load mechanisms. It ensures that the list of models fetched from Ollama becomes the persisted `modelNames` for that provider. This, in turn, will make `getAvailableModelsCallback` (which reads `config.modelNames`) use the correct, auto-detected list for Ollama providers.
+
+**Let's proceed with Option 1.**
+
+I will modify `loadOllamaModels` in `ModelSettings.tsx` to update the provider's `modelNames` with the fetched models and mark it for saving.
+
+---
+
+```diff
+    // Function to load Ollama models for a provider
+    const loadOllamaModels = async (providerId: string, config: ProviderConfig) => {
+-     if (config.type === ProviderTypeEnum.Ollama && config.baseUrl) {
++     if (!config.baseUrl) return;
++     setIsTesting(prev => ({ ...prev, [providerId]: true }));
+      try {
+-         const models = await fetchOllamaModels(config.baseUrl);
+-         setOllamaModels(prev => ({
+-           ...prev,
+-           [providerId]: models,
+-         }));
++       const modelsFromApi = await fetchOllamaModels(config.baseUrl);
++       setOllamaModels(prev => ({ ...prev, [providerId]: modelsFromApi }));
+  
+-         // If we got models and the current provider doesn't have any models set,
+-         // update the provider config with these models
+-         if (models.length > 0 && (!config.modelNames || config.modelNames.length === 0)) {
+-           const updatedConfig = {
+-             ...config,
+-             modelNames: models,
+-           };
+- 
+-           // Update the local state
++       // Update the provider's modelNames in the main 'providers' state
+        setProviders(prev => ({
+          ...prev,
+-             [providerId]: updatedConfig,
++         [providerId]: {
++           ...prev[providerId],
++           modelNames: modelsFromApi, // Replace with fetched models
++         },
+        }));
+- 
+-           // Mark as modified
+-           setModifiedProviders(prev => {
+-             const newSet = new Set(prev);
+-             newSet.add(providerId);
+-             return newSet;
+-           });
+-         }
++       // Mark the provider as modified so the user can save it
++       setModifiedProviders(prev => new Set(prev).add(providerId));
++ 
++       setTestResults(prev => ({
++         ...prev,
++         [providerId]: { success: true, details: `Found ${modelsFromApi.length} models.` },
++       }));
+      } catch (error) {
+        console.error(`Error loading Ollama models for ${providerId}:`, error);
+-       }
++       setTestResults(prev => ({
++         ...prev,
++         [providerId]: { success: false, error: (error as Error).message },
++       }));
++     } finally {
++       setIsTesting(prev => ({ ...prev, [providerId]: false }));
+      }
+    };
+```
+
+---
+
+The `loadOllamaModels` function in `ModelSettings.tsx` has been updated.
+
+**Explanation of Changes and Impact:**
+
+1.  When `loadOllamaModels` successfully fetches models from an Ollama instance (via `fetchOllamaModels`):
+    *   It now calls `setProviders` to update the specific Ollama provider's entry in the main `providers` state. The `modelNames` array of this provider is replaced with the list of models fetched from the API.
+    *   It calls `setModifiedProviders` to add this `providerId` to the set. This will enable the "Save" button for that Ollama provider, prompting the user to persist these auto-detected models.
+
+**User Workflow Now:**
+
+1.  User adds an Ollama provider or an existing one loads.
+2.  If a Base URL is present, `loadOllamaModels` is triggered (e.g., on page load if the provider already exists, or potentially after a "Test Connection" or similar action if we enhance that).
+3.  The models are fetched from Ollama.
+4.  The `modelNames` for that Ollama provider in the UI's state are updated with the fetched list.
+5.  The "Save" button for that Ollama provider becomes active.
+6.  User clicks "Save".
+7.  The `handleSave` function calls `llmProviderStore.setProvider(...)`, persisting the Ollama provider's config, now including the `modelNames` array populated from the Ollama API.
+8.  On subsequent loads, `llmProviderStore.getAllProviders()` will return this saved config.
+9.  `getAvailableModelsCallback` will then use these (correct, auto-detected) `modelNames` to populate the list of available models for agent selection dropdowns.
+
+**Further Considerations/Refinements (Optional, for later):**
+
+*   **Automatic Save:** Instead of requiring the user to click "Save" after models are auto-detected, you could trigger `handleSave(providerId)` automatically within `loadOllamaModels` after `setModifiedProviders`. This would make the process more seamless.
+*   **UI for Ollama's "Models" field:** You might want to make the "Models" input field (the one where users can type and add model name tags) read-only or hidden for Ollama providers, since the list is now auto-populated. The tags can still be used to *display* the auto-detected models.
+*   **Triggering `loadOllamaModels`:** Currently, it's called in `useEffect` when loading providers initially. If a user changes the Base URL of an Ollama provider, `loadOllamaModels` should ideally be re-triggered for that provider. The "Test Connection" button is a good place to also trigger `loadOllamaModels`.
+
+For now, with the current change, the mechanism to fetch and then *allow the user to save* the auto-detected Ollama models is in place. This should address the core issue of Ollama models not being automatically listed and used.
+
+Please test this.
+1. Ensure your Ollama provider has the correct Base URL.
+2. The "Save" button for it should become active after a short delay (while models are fetched).
+3. Click "Save".
+4. Then check if the agent model dropdowns (e.g., for Planner) correctly list these Ollama models.
+5. Also, verify if these settings persist after refreshing the Options page.
+
+---
+
+_**User**_
+
+git commit and push
+
+---
+
+_**Assistant**_
+
+
 
 ---
 
