@@ -117,6 +117,7 @@ const SidePanel = () => {
           switch (state) {
             case ExecutionState.STEP_START:
               displayProgress = true;
+              skip = false;
               break;
             case ExecutionState.STEP_OK:
               skip = false;
@@ -135,6 +136,7 @@ const SidePanel = () => {
           switch (state) {
             case ExecutionState.STEP_START:
               displayProgress = true;
+              skip = false;
               break;
             case ExecutionState.STEP_OK:
               displayProgress = false;
@@ -167,6 +169,7 @@ const SidePanel = () => {
           switch (state) {
             case ExecutionState.STEP_START:
               displayProgress = true;
+              skip = false;
               break;
             case ExecutionState.STEP_OK:
               skip = false;

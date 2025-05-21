@@ -2,7 +2,7 @@ import { BaseAgent, type BaseAgentOptions, type ExtraAgentOptions } from './base
 import { createLogger } from '@src/background/log';
 import { z } from 'zod';
 import type { AgentOutput } from '../types';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
 import { Actors, ExecutionState } from '../event/types';
 import {
   ChatModelAuthError,
@@ -48,9 +48,38 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
   async execute(): Promise<AgentOutput<PlannerOutput>> {
     try {
+      const messagesForPlannerInput = this.context.messageManager.getMessages();
+      let taskInstruction = 'Task instruction not found.';
+      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
+      for (const msg of messagesForPlannerInput) {
+        if (
+          msg instanceof HumanMessage &&
+          typeof msg.content === 'string' &&
+          msg.content.startsWith(taskInstructionPrefix)
+        ) {
+          taskInstruction = msg.content;
+          break;
+        }
+      }
+
+      const recentHistoryRaw = messagesForPlannerInput.slice(-5); // Get last 5 messages
+      const recentHistory = recentHistoryRaw.map(msg => {
+        let actorName = 'Unknown';
+        if (msg instanceof HumanMessage) actorName = 'User';
+        else if (msg instanceof AIMessage)
+          actorName = 'AI'; // Or more specific if possible
+        else if (msg instanceof SystemMessage) actorName = 'System';
+        // Add other message types if necessary
+        return `${actorName}: ${typeof msg.content === 'string' ? msg.content.substring(0, 150) + (msg.content.length > 150 ? '...' : '') : '[Non-string content]'}`;
+      });
+
       this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...', undefined, {
         status: 'planning',
         step: this.context.nSteps,
+        inputs: {
+          taskInstruction,
+          recentHistory,
+        },
       });
       // get all messages from the message manager, state message should be the last one
       const messages = this.context.messageManager.getMessages();

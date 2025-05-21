@@ -3,7 +3,7 @@ import { createLogger } from '@src/background/log';
 import { z } from 'zod';
 import { ActionResult, type AgentOutput } from '../types';
 import { Actors, ExecutionState } from '../event/types';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
 import {
   ChatModelAuthError,
   ChatModelForbiddenError,
@@ -52,9 +52,53 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
    */
   async execute(): Promise<AgentOutput<ValidatorOutput>> {
     try {
+      const allMessages = this.context.messageManager.getMessages();
+      let taskInstruction = 'Task instruction not found.';
+      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
+      for (const msg of allMessages) {
+        if (
+          msg instanceof HumanMessage &&
+          typeof msg.content === 'string' &&
+          msg.content.startsWith(taskInstructionPrefix)
+        ) {
+          taskInstruction = msg.content;
+          break;
+        }
+      }
+
+      let originalPlan = 'Original plan not found.';
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i];
+        if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
+          originalPlan = msg.content;
+          break;
+        }
+      }
+
+      let dataToValidate = 'Data to validate not found (e.g., last Navigator output).';
+      // Find the latest Navigator output to validate.
+      // This is also a heuristic. Ideally, we'd identify specific Navigator STEP_OK/ACT_OK messages.
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i];
+        if (
+          msg instanceof HumanMessage &&
+          typeof msg.content === 'string' &&
+          msg.content.startsWith('Action result:')
+        ) {
+          dataToValidate = msg.content;
+          break;
+        }
+        // Could also look for AIMessages from Navigator if they represent its final output for a step.
+      }
+
       this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_START, 'Validating...', {
         status: 'validating',
         step: this.context.nSteps,
+        inputs: {
+          taskInstruction,
+          originalPlan,
+          dataToValidate,
+        },
       });
 
       let stateMessage = await this.prompt.getUserMessage(this.context);

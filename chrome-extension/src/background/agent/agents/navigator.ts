@@ -5,7 +5,7 @@ import { ActionResult, type AgentOutput } from '../types';
 import type { Action } from '../actions/builder';
 import { buildDynamicActionSchema } from '../actions/builder';
 import { agentBrainSchema } from '../types';
-import { type BaseMessage, HumanMessage } from '@langchain/core/messages';
+import { type BaseMessage, HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { Actors, ExecutionState } from '../event/types';
 import {
   ChatModelAuthError,
@@ -133,9 +133,37 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let cancelled = false;
 
     try {
+      const allMessages = this.context.messageManager.getMessages();
+      let taskInstruction = 'Task instruction not found.';
+      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
+      for (const msg of allMessages) {
+        if (
+          msg instanceof HumanMessage &&
+          typeof msg.content === 'string' &&
+          msg.content.startsWith(taskInstructionPrefix)
+        ) {
+          taskInstruction = msg.content;
+          break;
+        }
+      }
+
+      let activePlan = 'Active plan not found.';
+      // Find the latest planner output for the active plan
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i];
+        if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
+          activePlan = msg.content;
+          break;
+        }
+      }
+
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...', {
         status: 'navigating',
         step: this.context.nSteps,
+        inputs: {
+          taskInstruction,
+          activePlan,
+        },
       });
 
       const messageManager = this.context.messageManager;
