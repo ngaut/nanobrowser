@@ -1,223 +1,34 @@
-# Project Progress and Planning
+# Project Progress
 
-## Current Task: Enhance Event Details in Web UI
+## Phase 1: Project Analysis & Event System Enhancement
+- [x] List project directory structure
+- [x] Create `progress.md`
+- [x] Analyze frontend (`pages/`) and backend (`packages/`) for event handling
+- [x] Update `EventData` to `EnhancedEventData` in `pages/side-panel/src/types/event.ts`
+- [x] Create `EventDetails.tsx` for displaying enhanced event details
+- [x] Modify `MessageList.tsx` to use `EventDetails.tsx`
 
-### Project Analysis
-- Project Structure:
-  - Frontend: Located in `pages/` directory
-    - Main UI components in `pages/side-panel/src/`
-    - Event handling in `pages/side-panel/src/types/event.ts`
-    - Message display in `pages/side-panel/src/components/MessageList.tsx`
-  - Backend: Located in `packages/` directory
-    - Storage system in `packages/storage/lib/`
-    - Event handling and persistence
-  - Chrome Extension: Located in `chrome-extension/` directory
-  - Uses pnpm workspaces for monorepo management
-  - Uses Vite for frontend development
+## Phase 2: Model Configuration Page - Connection Test Feature & Debugging
+- [x] Add "Test Connection" button to `ModelSettings.tsx`
+- [x] Create `packages/storage/lib/settings/connectionTest.ts`
+- [x] Update `ModelSettings.tsx` to use test functions
+- [x] Fix build error: `testProviderConnection` not exported
+- [x] Fix build error: `ProviderConfig` not exported
+- [x] Restore lost UI features in `ModelSettings.tsx`
+- [x] Debug Ollama 403 Forbidden error (resolved by setting `OLLAMA_ORIGINS`)
+- [ ] Investigate Ollama JSON unmarshal error (`ChatRequest.format` type mismatch)
 
-### Current Implementation Analysis
-1. Event System
-   - Event Types:
-     - Currently supports `EXECUTION` type events
-     - Events are categorized by actors (User, System, Planner, Navigator, Validator)
-     - Execution states include task, step, and action level states
-   - Event Data Structure:
-     ```typescript
-     interface EventData {
-       taskId: string;
-       step: number;
-       maxSteps: number;
-       details: string;
-     }
-     ```
-   - Event Storage:
-     - Uses Chrome's storage API
-     - Events are stored in chat history
-     - Supports live updates between extension components
+## Phase 3: Debug "Enable Vision with Highlighting"
+- [ ] Investigate why highlighting is not appearing on web pages.
+  - [ ] Understand the feature implementation.
+  - [ ] Examine relevant code for issues.
+  - [ ] Check browser console and extension background logs for errors.
 
-2. Current UI Implementation
-   - Message Display:
-     - Basic message list with actor icons
-     - Timestamp formatting
-     - Progress indicators
-     - Dark mode support
-   - Event Visualization:
-     - Simple text-based event display
-     - Basic progress indicators
-     - Limited event details shown
-
-### Enhancement Plan
-
-#### Phase 1: Event Data Model Enhancement
-- [ ] Extend EventData interface:
-  ```typescript
-  interface EnhancedEventData extends EventData {
-    // Add new fields
-    duration?: number;        // Event duration in milliseconds
-    status: 'success' | 'error' | 'warning' | 'info';
-    metadata?: {
-      // Additional context
-      source?: string;
-      target?: string;
-      parameters?: Record<string, unknown>;
-      errorDetails?: {
-        code?: string;
-        message?: string;
-        stack?: string;
-      };
-    };
-    relatedEvents?: string[]; // IDs of related events
-  }
-  ```
-- [ ] Add event categorization and tagging system
-- [ ] Implement event relationships tracking
-- [ ] Add event validation and sanitization
-
-#### Phase 2: Backend Enhancements
-- [ ] Update storage system:
-  - [ ] Add event indexing for faster retrieval
-  - [ ] Implement event filtering and search
-  - [ ] Add event aggregation capabilities
-  - [ ] Implement event retention policies
-- [ ] Add new API endpoints:
-  - [ ] Event search and filtering
-  - [ ] Event statistics and analytics
-  - [ ] Event export functionality
-- [ ] Implement event validation and error handling
-- [ ] Add event logging and debugging tools
-
-#### Phase 3: Frontend Implementation
-- [ ] Create new event visualization components:
-  - [ ] Event timeline view
-  - [ ] Event tree/dependency view
-  - [ ] Event statistics dashboard
-  - [ ] Event search and filter interface
-- [ ] Enhance message display:
-  - [ ] Add collapsible event details
-  - [ ] Implement event grouping
-  - [ ] Add event status indicators
-  - [ ] Show event relationships
-- [ ] Add new UI features:
-  - [ ] Event filtering and sorting
-  - [ ] Event search with advanced filters
-  - [ ] Event export options
-  - [ ] Event statistics visualization
-- [ ] Implement dark mode support for new components
-
-#### Phase 4: Testing and Optimization
-- [ ] Unit tests:
-  - [ ] Event data model tests
-  - [ ] Storage system tests
-  - [ ] UI component tests
-- [ ] Integration tests:
-  - [ ] Event flow tests
-  - [ ] UI interaction tests
-  - [ ] Performance tests
-- [ ] Performance optimization:
-  - [ ] Implement event data pagination
-  - [ ] Add event data caching
-  - [ ] Optimize event rendering
-- [ ] Browser compatibility testing
-
-#### Phase 5: Enhancing Connection Test to Detect Format Issues
-- **Status:** Completed
-- **Issue:** The connection test could pass even if there were format parameter issues with actual API calls.
-- **Root Cause Analysis:**
-    - The original connection test for Ollama only verified basic connectivity using the `/api/tags` endpoint.
-    - It didn't test the actual chat endpoint with format parameters that would be used in real requests.
-    - This allowed the test to pass even when the actual chat requests would fail with JSON format issues.
-- **Solution Implementation:**
-    1. **Enhanced Ollama Connection Test:**
-        - Modified `testOllamaConnection` in `packages/storage/lib/settings/connectionTest.ts` to add a two-phase test.
-        - First phase: Check basic connectivity to `/api/tags` endpoint (original test).
-        - Second phase: Test the chat API with a JSON format parameter to detect potential format issues.
-        - Added specific error detection for format parameter unmarshal errors.
-        - Added graceful handling for missing model cases (avoiding false negatives).
-    2. **Improved Error Reporting:**
-        - Added detailed error messages specifically for format parameter issues.
-        - Added warnings when chat API tests fail but basic connectivity succeeds.
-    3. **Model Selection Improvements:**
-        - Updated the test to use the user's configured model instead of a hardcoded one.
-        - Added fallback logic to use the first available model on the server if the configured model isn't specified.
-        - Added available models list in the success message to help users know what models are available.
-        - Improved error message for missing models to include the specific model name and pull command.
-    4. **Version Compatibility Detection:**
-        - Added specific handling for "not supported by your version" errors (HTTP 500).
-        - Enhanced error messaging to include explicit instructions for upgrading Ollama.
-        - Categorized this as a distinct "Ollama Version Compatibility Error" for clearer user guidance.
-- **Outcome:**
-    - The connection test now detects JSON format parameter issues before they cause problems in actual usage.
-    - Users receive more informative error messages that help diagnose specific issues.
-    - The test uses the actual model the user intends to use, providing a more accurate test result.
-    - Users are guided to upgrade Ollama when using models that require newer versions.
-- **Key Learnings:**
-    1. Connection tests should verify not just basic connectivity but also the specific API features that will be used.
-    2. Testing with the exact parameters that will be used in production provides more accurate results.
-    3. Detailed and specific error messages are crucial for diagnosing API integration issues.
-    4. Using the user's actual configuration values for testing yields more relevant results than using generic defaults.
-    5. Different types of errors should be clearly categorized and presented with specific remediations.
-
-### Notes & Takeaways
-- **Test Coverage:** Consider adding similar comprehensive tests for other provider types to detect parameter issues.
-- **Progressive Testing:** The two-phase approach (first check basic connectivity, then test specific features) provides a better user experience by pinpointing the exact issue.
-- **Error Categorization:** Specifically looking for known error patterns (like "unmarshal" + "format") helps provide targeted guidance.
-
-### Implementation Priority
-1. Event Data Model Enhancement
-   - This is the foundation for all other improvements
-   - Will enable better event tracking and analysis
-   - Minimal impact on existing functionality
-
-2. Backend Storage Updates
-   - Required for new event features
-   - Can be implemented incrementally
-   - Will improve event handling performance
-
-3. Frontend UI Components
-   - Can be developed in parallel with backend changes
-   - Should be implemented incrementally
-   - Focus on user experience and performance
-
-4. Testing and Optimization
-   - Continuous throughout development
-   - Focus on stability and performance
-   - Ensure backward compatibility
-
-### Debugging Strategy
-1. Frontend Debugging:
-   - Add detailed console logging for event handling
-   - Implement event flow visualization
-   - Add performance monitoring
-   - Use React DevTools for component debugging
-
-2. Backend Debugging:
-   - Add comprehensive logging
-   - Implement event validation checks
-   - Add storage operation monitoring
-   - Create debugging tools for event inspection
-
-3. Testing Tools:
-   - Create event simulation tools
-   - Add event validation tools
-   - Implement performance monitoring
-   - Add error tracking and reporting
-
-### Next Steps
-1. Begin with Event Data Model Enhancement
-   - Create new event interfaces
-   - Update existing event handling
-   - Add validation and sanitization
-2. Implement backend storage updates
-3. Develop new UI components
-4. Add testing and monitoring
-5. Optimize and refine
-
-### Notes
-- Maintain backward compatibility
-- Focus on performance and user experience
-- Implement changes incrementally
-- Regular testing and validation
-- Document all changes and new features
+## Notes & Takeaways
+- Remember to export new functions/types from package entry points (e.g., `packages/storage/lib/index.ts`).
+- Double-check UI elements after making significant code changes to ensure nothing is accidentally removed.
+- Environment variables (`OLLAMA_ORIGINS`) are crucial for services like Ollama.
+- Pay close attention to request payload structures when integrating with external APIs (e.g., Ollama `format` field).
 
 ## Project Activity Log
 

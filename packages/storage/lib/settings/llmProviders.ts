@@ -204,6 +204,34 @@ function ensureBackwardCompatibility(providerId: string, config: ProviderConfig)
   return updatedConfig;
 }
 
+// Helper function to fetch available models from Ollama
+export async function fetchOllamaModels(baseUrl: string): Promise<string[]> {
+  try {
+    const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const response = await fetch(`${url}/api/tags`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Error fetching Ollama models: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    if (data.models && Array.isArray(data.models)) {
+      return data.models.map((model: any) => model.name);
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Error fetching Ollama models:', error);
+    return [];
+  }
+}
+
 export const llmProviderStore: LLMProviderStorage = {
   ...storage,
   async setProvider(providerId: string, config: ProviderConfig) {

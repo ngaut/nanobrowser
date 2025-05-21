@@ -53,6 +53,27 @@ export interface EventData {
   details: string;
 }
 
+export interface EventMetadata {
+  source?: string;
+  target?: string;
+  parameters?: Record<string, unknown>;
+  errorDetails?: {
+    code?: string;
+    message?: string;
+    stack?: string;
+  };
+}
+
+export type EventStatus = 'success' | 'error' | 'warning' | 'info';
+
+export interface EnhancedEventData extends EventData {
+  duration?: number; // Event duration in milliseconds
+  status: EventStatus;
+  metadata?: EventMetadata;
+  relatedEvents?: string[]; // IDs of related events
+  tags?: string[]; // For event categorization
+}
+
 export class AgentEvent {
   /**
    * Represents a state change event in the task execution system.
@@ -62,10 +83,48 @@ export class AgentEvent {
   constructor(
     public actor: Actors,
     public state: ExecutionState,
-    public data: EventData,
+    public data: EnhancedEventData,
     public timestamp: number = Date.now(),
     public type: EventType = EventType.EXECUTION,
   ) {}
+
+  // Helper method to get event status based on state
+  getEventStatus(): EventStatus {
+    switch (this.state) {
+      case ExecutionState.TASK_OK:
+      case ExecutionState.STEP_OK:
+      case ExecutionState.ACT_OK:
+        return 'success';
+      case ExecutionState.TASK_FAIL:
+      case ExecutionState.STEP_FAIL:
+      case ExecutionState.ACT_FAIL:
+        return 'error';
+      case ExecutionState.TASK_PAUSE:
+      case ExecutionState.TASK_RESUME:
+        return 'warning';
+      default:
+        return 'info';
+    }
+  }
+
+  // Helper method to get event duration
+  getDuration(): number | undefined {
+    // This will be populated when the event is completed
+    return this.data.duration;
+  }
+
+  // Helper method to get formatted duration
+  getFormattedDuration(): string | undefined {
+    const duration = this.getDuration();
+    if (!duration) return undefined;
+
+    if (duration < 1000) {
+      return `${duration}ms`;
+    }
+    const seconds = Math.floor(duration / 1000);
+    const milliseconds = duration % 1000;
+    return `${seconds}s ${milliseconds}ms`;
+  }
 }
 
 // The type of callback for event subscribers

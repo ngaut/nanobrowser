@@ -32,7 +32,13 @@ export const llmProviderModelNames = {
     // 'gemini-2.0-flash-thinking-exp-01-21', // TODO: not support function calling for now
   ],
   [ProviderTypeEnum.Grok]: ['grok-3', 'grok-3-fast', 'grok-3-mini', 'grok-3-mini-fast'],
-  [ProviderTypeEnum.Ollama]: ['qwen3:14b', 'falcon3:10b', 'qwen2.5-coder:14b', 'mistral-small:24b'],
+  [ProviderTypeEnum.Ollama]: [
+    'qwen3:14b',
+    'falcon3:10b',
+    'qwen2.5-coder:14b',
+    'mistral-small:24b',
+    'bsahane/Qwen2.5-VL:7b',
+  ],
   [ProviderTypeEnum.AzureOpenAI]: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o4-mini', 'o3'],
   [ProviderTypeEnum.OpenRouter]: [
     'openai/gpt-4.1',
@@ -145,3 +151,5 @@ export const llmProviderParameters = {
     },
   },
 };
+
+export type { ProviderConfig } from './llmProviders';

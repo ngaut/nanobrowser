@@ -19,6 +19,8 @@ import {
   getDefaultProviderConfig,
   getDefaultAgentModelParams,
   type ProviderConfig,
+  testProviderConnection,
+  fetchOllamaModels,
 } from '@extension/storage';
 
 // Helper function to check if a model is an O-series model
@@ -65,6 +67,11 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
     Array<{ provider: string; providerName: string; model: string }>
   >([]);
   // State for model input handling
+  const [testResults, setTestResults] = useState<
+    Record<string, { success: boolean; error?: string; details?: string }>
+  >({});
+  const [isTesting, setIsTesting] = useState<Record<string, boolean>>({});
+  const [ollamaModels, setOllamaModels] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const loadProviders = async () => {
@@ -78,6 +85,13 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
 
         // Only use providers from storage, don't add default ones
         setProviders(allProviders);
+
+        // Load models for any Ollama providers
+        Object.entries(allProviders).forEach(([providerId, config]) => {
+          if (config.type === ProviderTypeEnum.Ollama && config.baseUrl) {
+            loadOllamaModels(providerId, config);
+          }
+        });
       } catch (error) {
         console.error('Error loading providers:', error);
         // Set empty providers on error
@@ -646,157 +660,181 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
     }
   };
 
-  const renderModelSelect = (agentName: AgentNameEnum) => (
-    <div
-      className={`rounded-lg border ${isDarkMode ? 'border-gray-700 bg-slate-800' : 'border-gray-200 bg-gray-50'} p-4`}>
-      <h3 className={`mb-2 text-lg font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
-      </h3>
-      <p className={`mb-4 text-sm font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-        {getAgentDescription(agentName)}
-      </p>
+  const renderModelSelect = (agentName: AgentNameEnum) => {
+    // Prepare the combined model list with dynamic Ollama models
+    const standardModels = [...availableModels];
 
-      <div className="space-y-4">
-        {/* Model Selection */}
-        <div className="flex items-center">
-          <label
-            htmlFor={`${agentName}-model`}
-            className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            Model
-          </label>
-          <select
-            id={`${agentName}-model`}
-            className={`flex-1 rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}
-            disabled={availableModels.length === 0}
-            value={
-              selectedModels[agentName]
-                ? `${getProviderForModel(selectedModels[agentName])}>${selectedModels[agentName]}`
-                : ''
-            }
-            onChange={e => handleModelChange(agentName, e.target.value)}>
-            <option key="default" value="">
-              Choose model
-            </option>
-            {availableModels.map(({ provider, providerName, model }) => (
-              <option key={`${provider}>${model}`} value={`${provider}>${model}`}>
-                {`${providerName} > ${model}`}
+    // Add dynamically loaded Ollama models that aren't in the standard list
+    const additionalOllamaModels = Object.entries(ollamaModels).flatMap(([providerId, models]) => {
+      if (!providers[providerId]) return [];
+
+      const providerConfig = providers[providerId];
+      const existingModels = new Set(standardModels.filter(m => m.provider === providerId).map(m => m.model));
+
+      return models
+        .filter(model => !existingModels.has(model))
+        .map(model => ({
+          provider: providerId,
+          providerName: providerConfig.name || providerId,
+          model,
+        }));
+    });
+
+    // Combine all models for the dropdown
+    const allModels = [...standardModels, ...additionalOllamaModels];
+
+    return (
+      <div
+        className={`rounded-lg border ${isDarkMode ? 'border-gray-700 bg-slate-800' : 'border-gray-200 bg-gray-50'} p-4`}>
+        <h3 className={`mb-2 text-lg font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+          {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
+        </h3>
+        <p className={`mb-4 text-sm font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          {getAgentDescription(agentName)}
+        </p>
+
+        <div className="space-y-4">
+          {/* Model Selection */}
+          <div className="flex items-center">
+            <label
+              htmlFor={`${agentName}-model`}
+              className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              Model
+            </label>
+            <select
+              id={`${agentName}-model`}
+              className={`flex-1 rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}
+              disabled={allModels.length === 0}
+              value={
+                selectedModels[agentName]
+                  ? `${getProviderForModel(selectedModels[agentName])}>${selectedModels[agentName]}`
+                  : ''
+              }
+              onChange={e => handleModelChange(agentName, e.target.value)}>
+              <option key="default" value="">
+                Choose model
               </option>
-            ))}
-          </select>
-        </div>
+              {allModels.map(({ provider, providerName, model }) => (
+                <option key={`${provider}>${model}`} value={`${provider}>${model}`}>
+                  {`${providerName} > ${model}`}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* Temperature Slider */}
-        <div className="flex items-center">
-          <label
-            htmlFor={`${agentName}-temperature`}
-            className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            Temperature
-          </label>
-          <div className="flex flex-1 items-center space-x-2">
-            <input
-              id={`${agentName}-temperature`}
-              type="range"
-              min="0"
-              max="2"
-              step="0.01"
-              value={modelParameters[agentName].temperature}
-              onChange={e => handleParameterChange(agentName, 'temperature', Number.parseFloat(e.target.value))}
-              style={{
-                background: `linear-gradient(to right, ${isDarkMode ? '#3b82f6' : '#60a5fa'} 0%, ${isDarkMode ? '#3b82f6' : '#60a5fa'} ${(modelParameters[agentName].temperature / 2) * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} ${(modelParameters[agentName].temperature / 2) * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} 100%)`,
-              }}
-              className={`flex-1 ${isDarkMode ? 'accent-blue-500' : 'accent-blue-400'} h-1 appearance-none rounded-full`}
-            />
-            <div className="flex items-center space-x-2">
-              <span className={`w-12 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {modelParameters[agentName].temperature.toFixed(2)}
-              </span>
+          {/* Temperature Slider */}
+          <div className="flex items-center">
+            <label
+              htmlFor={`${agentName}-temperature`}
+              className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              Temperature
+            </label>
+            <div className="flex flex-1 items-center space-x-2">
               <input
-                type="number"
+                id={`${agentName}-temperature`}
+                type="range"
                 min="0"
                 max="2"
                 step="0.01"
                 value={modelParameters[agentName].temperature}
-                onChange={e => {
-                  const value = Number.parseFloat(e.target.value);
-                  if (!Number.isNaN(value) && value >= 0 && value <= 2) {
-                    handleParameterChange(agentName, 'temperature', value);
-                  }
+                onChange={e => handleParameterChange(agentName, 'temperature', Number.parseFloat(e.target.value))}
+                style={{
+                  background: `linear-gradient(to right, ${isDarkMode ? '#3b82f6' : '#60a5fa'} 0%, ${isDarkMode ? '#3b82f6' : '#60a5fa'} ${(modelParameters[agentName].temperature / 2) * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} ${(modelParameters[agentName].temperature / 2) * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} 100%)`,
                 }}
-                className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} px-2 py-1 text-sm`}
-                aria-label={`${agentName} temperature number input`}
+                className={`flex-1 ${isDarkMode ? 'accent-blue-500' : 'accent-blue-400'} h-1 appearance-none rounded-full`}
               />
+              <div className="flex items-center space-x-2">
+                <span className={`w-12 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {modelParameters[agentName].temperature.toFixed(2)}
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.01"
+                  value={modelParameters[agentName].temperature}
+                  onChange={e => {
+                    const value = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(value) && value >= 0 && value <= 2) {
+                      handleParameterChange(agentName, 'temperature', value);
+                    }
+                  }}
+                  className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} px-2 py-1 text-sm`}
+                  aria-label={`${agentName} temperature number input`}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Top P Slider */}
-        <div className="flex items-center">
-          <label
-            htmlFor={`${agentName}-topP`}
-            className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            Top P
-          </label>
-          <div className="flex flex-1 items-center space-x-2">
-            <input
-              id={`${agentName}-topP`}
-              type="range"
-              min="0"
-              max="1"
-              step="0.001"
-              value={modelParameters[agentName].topP}
-              onChange={e => handleParameterChange(agentName, 'topP', Number.parseFloat(e.target.value))}
-              style={{
-                background: `linear-gradient(to right, ${isDarkMode ? '#3b82f6' : '#60a5fa'} 0%, ${isDarkMode ? '#3b82f6' : '#60a5fa'} ${modelParameters[agentName].topP * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} ${modelParameters[agentName].topP * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} 100%)`,
-              }}
-              className={`flex-1 ${isDarkMode ? 'accent-blue-500' : 'accent-blue-400'} h-1 appearance-none rounded-full`}
-            />
-            <div className="flex items-center space-x-2">
-              <span className={`w-12 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {modelParameters[agentName].topP.toFixed(3)}
-              </span>
+          {/* Top P Slider */}
+          <div className="flex items-center">
+            <label
+              htmlFor={`${agentName}-topP`}
+              className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              Top P
+            </label>
+            <div className="flex flex-1 items-center space-x-2">
               <input
-                type="number"
+                id={`${agentName}-topP`}
+                type="range"
                 min="0"
                 max="1"
                 step="0.001"
                 value={modelParameters[agentName].topP}
-                onChange={e => {
-                  const value = Number.parseFloat(e.target.value);
-                  if (!Number.isNaN(value) && value >= 0 && value <= 1) {
-                    handleParameterChange(agentName, 'topP', value);
-                  }
+                onChange={e => handleParameterChange(agentName, 'topP', Number.parseFloat(e.target.value))}
+                style={{
+                  background: `linear-gradient(to right, ${isDarkMode ? '#3b82f6' : '#60a5fa'} 0%, ${isDarkMode ? '#3b82f6' : '#60a5fa'} ${modelParameters[agentName].topP * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} ${modelParameters[agentName].topP * 100}%, ${isDarkMode ? '#475569' : '#cbd5e1'} 100%)`,
                 }}
-                className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} px-2 py-1 text-sm`}
-                aria-label={`${agentName} top P number input`}
+                className={`flex-1 ${isDarkMode ? 'accent-blue-500' : 'accent-blue-400'} h-1 appearance-none rounded-full`}
               />
+              <div className="flex items-center space-x-2">
+                <span className={`w-12 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {modelParameters[agentName].topP.toFixed(3)}
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.001"
+                  value={modelParameters[agentName].topP}
+                  onChange={e => {
+                    const value = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(value) && value >= 0 && value <= 1) {
+                      handleParameterChange(agentName, 'topP', value);
+                    }
+                  }}
+                  className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} px-2 py-1 text-sm`}
+                  aria-label={`${agentName} top P number input`}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Reasoning Effort Selector (only for O-series models) */}
-        {selectedModels[agentName] && isOpenAIOModel(selectedModels[agentName]) && (
-          <div className="flex items-center">
-            <label
-              htmlFor={`${agentName}-reasoning-effort`}
-              className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Reasoning
-            </label>
-            <div className="flex flex-1 items-center space-x-2">
-              <select
-                id={`${agentName}-reasoning-effort`}
-                value={reasoningEffort[agentName] || 'medium'}
-                onChange={e => handleReasoningEffortChange(agentName, e.target.value as 'low' | 'medium' | 'high')}
-                className={`flex-1 rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}>
-                <option value="low">Low (Faster)</option>
-                <option value="medium">Medium (Balanced)</option>
-                <option value="high">High (More thorough)</option>
-              </select>
+          {/* Reasoning Effort Selector (only for O-series models) */}
+          {selectedModels[agentName] && isOpenAIOModel(selectedModels[agentName]) && (
+            <div className="flex items-center">
+              <label
+                htmlFor={`${agentName}-reasoning-effort`}
+                className={`w-24 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Reasoning
+              </label>
+              <div className="flex flex-1 items-center space-x-2">
+                <select
+                  id={`${agentName}-reasoning-effort`}
+                  value={reasoningEffort[agentName] || 'medium'}
+                  onChange={e => handleReasoningEffortChange(agentName, e.target.value as 'low' | 'medium' | 'high')}
+                  className={`flex-1 rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}>
+                  <option value="low">Low (Faster)</option>
+                  <option value="medium">Medium (Balanced)</option>
+                  <option value="high">High (More thorough)</option>
+                </select>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const getAgentDescription = (agentName: AgentNameEnum) => {
     switch (agentName) {
@@ -855,29 +893,71 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
     }, 100);
   };
 
-  const addBuiltInProvider = (provider: string) => {
-    // Get the default provider configuration
-    const config = getDefaultProviderConfig(provider);
+  // Function to load Ollama models for a provider
+  const loadOllamaModels = async (providerId: string, config: ProviderConfig) => {
+    if (config.type === ProviderTypeEnum.Ollama && config.baseUrl) {
+      try {
+        const models = await fetchOllamaModels(config.baseUrl);
+        setOllamaModels(prev => ({
+          ...prev,
+          [providerId]: models,
+        }));
 
-    // Add the provider to the state
-    setProviders(prev => ({
-      ...prev,
-      [provider]: config,
-    }));
+        // If we got models and the current provider doesn't have any models set,
+        // update the provider config with these models
+        if (models.length > 0 && (!config.modelNames || config.modelNames.length === 0)) {
+          const updatedConfig = {
+            ...config,
+            modelNames: models,
+          };
 
-    // Mark as modified so it shows up in the UI
-    setModifiedProviders(prev => new Set(prev).add(provider));
+          // Update the local state
+          setProviders(prev => ({
+            ...prev,
+            [providerId]: updatedConfig,
+          }));
 
-    // Set the newly added provider ref
-    newlyAddedProviderRef.current = provider;
-
-    // Scroll to the newly added provider after render
-    setTimeout(() => {
-      const providerElement = document.getElementById(`provider-${provider}`);
-      if (providerElement) {
-        providerElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Mark as modified
+          setModifiedProviders(prev => {
+            const newSet = new Set(prev);
+            newSet.add(providerId);
+            return newSet;
+          });
+        }
+      } catch (error) {
+        console.error(`Error loading Ollama models for ${providerId}:`, error);
       }
-    }, 100);
+    }
+  };
+
+  // Enhance handleTestConnection to update Ollama models after successful connection
+  const handleTestConnection = async (providerId: string) => {
+    const config = providers[providerId];
+    if (!config) return;
+
+    setIsTesting(prev => ({ ...prev, [providerId]: true }));
+    setTestResults(prev => ({ ...prev, [providerId]: { success: false } }));
+
+    try {
+      const result = await testProviderConnection(providerId, config);
+      setTestResults(prev => ({ ...prev, [providerId]: result }));
+
+      // If this is an Ollama provider and the connection was successful, fetch models
+      if (config.type === ProviderTypeEnum.Ollama && result.success) {
+        await loadOllamaModels(providerId, config);
+      }
+    } catch (error) {
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: {
+          success: false,
+          error: 'Error',
+          details: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+      }));
+    } finally {
+      setIsTesting(prev => ({ ...prev, [providerId]: false }));
+    }
   };
 
   // Sort providers to ensure newly added providers appear at the bottom
@@ -992,6 +1072,42 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
         providerElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 100);
+  };
+
+  // Enhance addBuiltInProvider to load Ollama models when an Ollama provider is added
+  const addBuiltInProvider = (provider: string) => {
+    // Ensure this is a valid built-in provider
+    if (!Object.values(ProviderTypeEnum).includes(provider as ProviderTypeEnum)) {
+      console.error(`Invalid provider type: ${provider}`);
+      return;
+    }
+
+    const providerConfig = getDefaultProviderConfig(provider);
+    const providerId = provider;
+
+    // Add the new provider to state
+    setProviders(prevProviders => ({
+      ...prevProviders,
+      [providerId]: providerConfig,
+    }));
+
+    // Mark it as modified
+    setModifiedProviders(prev => {
+      const newSet = new Set(prev);
+      newSet.add(providerId);
+      return newSet;
+    });
+
+    // Set newly added provider for auto-focus
+    newlyAddedProviderRef.current = providerId;
+
+    // Close the provider selector
+    setIsProviderSelectorOpen(false);
+
+    // If this is an Ollama provider, try to load models
+    if (provider === ProviderTypeEnum.Ollama && providerConfig.baseUrl) {
+      loadOllamaModels(providerId, providerConfig);
+    }
   };
 
   const getProviderForModel = (modelName: string): string => {
@@ -1191,7 +1307,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                       <div className="relative flex-1">
                         <input
                           id={`${providerId}-api-key`}
-                          type="password"
+                          type={visibleApiKeys[providerId] ? 'text' : 'password'}
                           placeholder={
                             providerConfig.type === ProviderTypeEnum.CustomOpenAI
                               ? `${providerConfig.name || providerId} API key (optional)`
@@ -1204,35 +1320,43 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                           className={`w-full rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} p-2 outline-none`}
                         />
                         {/* Show eye button only for newly added providers */}
-                        {modifiedProviders.has(providerId) && !providersFromStorage.has(providerId) && (
+                        {modifiedProviders.has(providerId) && (
                           <button
                             type="button"
-                            className={`absolute right-2 top-1/2 -translate-y-1/2 ${
-                              isDarkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'
-                            }`}
                             onClick={() => toggleApiKeyVisibility(providerId)}
+                            className={`absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 ${
+                              isDarkMode ? 'hover:bg-slate-600' : 'hover:bg-gray-100'
+                            }`}
                             aria-label={visibleApiKeys[providerId] ? 'Hide API key' : 'Show API key'}>
                             <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
+                              className="size-4"
                               fill="none"
                               stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="size-5"
-                              aria-hidden="true">
-                              <title>{visibleApiKeys[providerId] ? 'Hide API key' : 'Show API key'}</title>
+                              viewBox="0 0 24 24"
+                              xmlns="http://www.w3.org/2000/svg">
                               {visibleApiKeys[providerId] ? (
                                 <>
-                                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                                  <circle cx="12" cy="12" r="3" />
-                                  <line x1="2" y1="22" x2="22" y2="2" />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                  />
                                 </>
                               ) : (
                                 <>
-                                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                                  <circle cx="12" cy="12" r="3" />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                  />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                  />
                                 </>
                               )}
                             </svg>
@@ -1264,10 +1388,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                           <label
                             htmlFor={`${providerId}-base-url`}
                             className={`w-20 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                            {/* Adjust Label based on provider */}
                             {providerConfig.type === ProviderTypeEnum.AzureOpenAI ? 'Endpoint' : 'Base URL'}
-                            {/* Show asterisk only if required */}
-                            {/* OpenRouter has a default, so not strictly required, but needed for save button */}
                             {providerConfig.type === ProviderTypeEnum.CustomOpenAI ||
                             providerConfig.type === ProviderTypeEnum.AzureOpenAI
                               ? '*'
@@ -1280,8 +1401,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                               providerConfig.type === ProviderTypeEnum.CustomOpenAI
                                 ? 'Required OpenAI-compatible API endpoint'
                                 : providerConfig.type === ProviderTypeEnum.AzureOpenAI
-                                  ? // Updated Azure placeholder
-                                    'https://YOUR_RESOURCE_NAME.openai.azure.com/'
+                                  ? 'https://YOUR_RESOURCE_NAME.openai.azure.com/'
                                   : providerConfig.type === ProviderTypeEnum.OpenRouter
                                     ? 'OpenRouter Base URL (optional, defaults to https://openrouter.ai/api/v1)'
                                     : 'Ollama base URL'
@@ -1305,7 +1425,6 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                         <div className="flex-1 space-y-2">
                           <div
                             className={`flex min-h-[42px] flex-wrap items-center gap-2 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} p-2`}>
-                            {/* Show azure deployments */}
                             {(providerConfig.azureDeploymentNames || []).length > 0
                               ? (providerConfig.azureDeploymentNames || []).map((deploymentName: string) => (
                                   <div
@@ -1334,11 +1453,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                                   const value = newModelInputs[providerId] || '';
                                   if (value.trim()) {
                                     addAzureDeployment(providerId, value.trim());
-                                    // Clear the input
-                                    setNewModelInputs(prev => ({
-                                      ...prev,
-                                      [providerId]: '',
-                                    }));
+                                    setNewModelInputs(prev => ({ ...prev, [providerId]: '' }));
                                   }
                                 }
                               }}
@@ -1353,7 +1468,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                       </div>
                     )}
 
-                    {/* NEW: Azure API Version input */}
+                    {/* Azure API Version input */}
                     {(providerConfig.type as ProviderTypeEnum) === ProviderTypeEnum.AzureOpenAI && (
                       <div className="flex items-center">
                         <label
@@ -1364,7 +1479,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                         <input
                           id={`${providerId}-azure-version`}
                           type="text"
-                          placeholder="e.g., 2024-02-15-preview" // Common example
+                          placeholder="e.g., 2024-02-15-preview"
                           value={providerConfig.azureApiVersion || ''}
                           onChange={e => handleAzureApiVersionChange(providerId, e.target.value)}
                           className={`flex-1 rounded-md border text-sm ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-800' : 'border-gray-300 bg-white text-gray-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-200'} p-2 outline-none`}
@@ -1377,182 +1492,177 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                       <div className="flex items-start">
                         <label
                           htmlFor={`${providerId}-models-label`}
-                          className={`w-20 pt-2 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                          className={`w-20 text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                           Models
                         </label>
                         <div className="flex-1 space-y-2">
-                          {/* Conditional UI for OpenRouter */}
-                          {(providerConfig.type as ProviderTypeEnum) === ProviderTypeEnum.OpenRouter ? (
-                            <>
-                              <div
-                                className={`flex min-h-[42px] flex-wrap items-center gap-2 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} p-2`}>
-                                {providerConfig.modelNames && providerConfig.modelNames.length > 0 ? (
-                                  providerConfig.modelNames.map(model => (
-                                    <div
-                                      key={model}
-                                      className={`flex items-center rounded-full ${isDarkMode ? 'bg-blue-900 text-blue-100' : 'bg-blue-100 text-blue-800'} px-2 py-1 text-sm`}>
-                                      <span>{model}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => removeModel(providerId, model)}
-                                        className={`ml-1 font-bold ${isDarkMode ? 'text-blue-300 hover:text-blue-100' : 'text-blue-600 hover:text-blue-800'}`}
-                                        aria-label={`Remove ${model}`}>
-                                        ×
-                                      </button>
-                                    </div>
-                                  ))
-                                ) : (
-                                  <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    No models selected. Add model names manually if needed.
-                                  </span>
-                                )}
-                                <input
-                                  id={`${providerId}-models-input`}
-                                  type="text"
-                                  placeholder=""
-                                  value={newModelInputs[providerId] || ''}
-                                  onChange={e => handleModelsChange(providerId, e.target.value)}
-                                  onKeyDown={e => handleKeyDown(e, providerId)}
-                                  className={`min-w-[150px] flex-1 border-none text-sm ${isDarkMode ? 'bg-transparent text-gray-200' : 'bg-transparent text-gray-700'} p-1 outline-none`}
-                                />
-                              </div>
-                              <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                Type and Press Enter or Space to add.
-                              </p>
-                            </>
-                          ) : (
-                            /* Default Tag Input for other providers */
-                            <>
-                              <div
-                                className={`flex min-h-[42px] flex-wrap items-center gap-2 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} p-2`}>
-                                {(() => {
-                                  const models =
-                                    providerConfig.modelNames !== undefined
-                                      ? providerConfig.modelNames
-                                      : llmProviderModelNames[providerId as keyof typeof llmProviderModelNames] || [];
-                                  return models.map(model => (
-                                    <div
-                                      key={model}
-                                      className={`flex items-center rounded-full ${isDarkMode ? 'bg-blue-900 text-blue-100' : 'bg-blue-100 text-blue-800'} px-2 py-1 text-sm`}>
-                                      <span>{model}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => removeModel(providerId, model)}
-                                        className={`ml-1 font-bold ${isDarkMode ? 'text-blue-300 hover:text-blue-100' : 'text-blue-600 hover:text-blue-800'}`}
-                                        aria-label={`Remove ${model}`}>
-                                        ×
-                                      </button>
-                                    </div>
-                                  ));
-                                })()}
-                                <input
-                                  id={`${providerId}-models-input`}
-                                  type="text"
-                                  placeholder=""
-                                  value={newModelInputs[providerId] || ''}
-                                  onChange={e => handleModelsChange(providerId, e.target.value)}
-                                  onKeyDown={e => handleKeyDown(e, providerId)}
-                                  className={`min-w-[150px] flex-1 border-none text-sm ${isDarkMode ? 'bg-transparent text-gray-200' : 'bg-transparent text-gray-700'} p-1 outline-none`}
-                                />
-                              </div>
-                              <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                Type and Press Enter or Space to add.
-                              </p>
-                            </>
-                          )}
-                          {/* === END: Conditional UI === */}
+                          <div
+                            className={`flex min-h-[42px] flex-wrap items-center gap-2 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} p-2`}>
+                            {/* Display model chips/tags */}
+                            {(providerConfig.modelNames || []).length > 0
+                              ? (providerConfig.modelNames || []).map((model: string) => (
+                                  <div
+                                    key={model}
+                                    className={`flex items-center rounded-full ${isDarkMode ? 'bg-blue-900 text-blue-100' : 'bg-blue-100 text-blue-800'} px-2 py-1 text-sm`}>
+                                    <span>{model}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeModel(providerId, model)}
+                                      className={`ml-1 font-bold ${isDarkMode ? 'text-blue-300 hover:text-blue-100' : 'text-blue-600 hover:text-blue-800'}`}
+                                      aria-label={`Remove ${model}`}>
+                                      ×
+                                    </button>
+                                  </div>
+                                ))
+                              : null}
+                            <input
+                              id={`${providerId}-models-input`}
+                              type="text"
+                              placeholder="Add model name"
+                              value={newModelInputs[providerId] || ''}
+                              onChange={e => handleModelsChange(providerId, e.target.value)}
+                              onKeyDown={e => handleKeyDown(e, providerId)}
+                              className={`min-w-[150px] flex-1 border-none text-sm ${isDarkMode ? 'bg-transparent text-gray-200' : 'bg-transparent text-gray-700'} p-1 outline-none`}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                              Type model name and press Enter to add
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => addModel(providerId, newModelInputs[providerId] || '')}
+                              disabled={!(newModelInputs[providerId] || '').trim()}
+                              className={`rounded px-2 py-1 text-xs ${
+                                !(newModelInputs[providerId] || '').trim()
+                                  ? `${isDarkMode ? 'bg-slate-600 text-gray-400' : 'bg-gray-200 text-gray-400'} cursor-not-allowed`
+                                  : `${isDarkMode ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-500 text-white hover:bg-blue-400'}`
+                              }`}>
+                              Add
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Ollama reminder at the bottom of the section */}
-                    {providerConfig.type === ProviderTypeEnum.Ollama && (
-                      <div
-                        className={`mt-4 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700' : 'border-blue-100 bg-blue-50'} p-3`}>
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                          <strong>Remember:</strong> Add{' '}
-                          <code
-                            className={`rounded italic ${isDarkMode ? 'bg-slate-600 px-1 py-0.5' : 'bg-blue-100 px-1 py-0.5'}`}>
-                            OLLAMA_ORIGINS=chrome-extension://*
-                          </code>{' '}
-                          environment variable for the Ollama server.
-                          <a
-                            href="https://github.com/ollama/ollama/issues/6489"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`ml-1 ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
-                            Learn more
-                          </a>
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                    {/* Test Connection Button & Results */}
+                    <div className="mt-4 flex items-start">
+                      <div className="w-20"></div>
+                      <div className="flex-1 space-y-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleTestConnection(providerId)}
+                          disabled={
+                            isTesting[providerId] ||
+                            (!providerConfig.baseUrl && providerConfig.type === ProviderTypeEnum.Ollama)
+                          }
+                          className="flex items-center space-x-1">
+                          {isTesting[providerId] ? (
+                            <>
+                              <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent" />
+                              Testing...
+                            </>
+                          ) : (
+                            'Test Connection'
+                          )}
+                        </Button>
 
-                  {/* Add divider except for the last item */}
-                  {Object.keys(providers).indexOf(providerId) < Object.keys(providers).length - 1 && (
-                    <div className={`mt-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`} />
-                  )}
+                        {/* Test Results Display */}
+                        {testResults[providerId] && (
+                          <div
+                            className={`mt-2 rounded-lg border px-4 py-2 ${
+                              testResults[providerId].success
+                                ? isDarkMode
+                                  ? 'border-emerald-800 bg-emerald-950 text-emerald-200'
+                                  : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                : isDarkMode
+                                  ? 'border-rose-800 bg-rose-950 text-rose-200'
+                                  : 'border-rose-200 bg-rose-50 text-rose-800'
+                            }`}>
+                            <div className="flex items-start">
+                              <div className="mt-0.5 mr-2">
+                                {testResults[providerId].success ? (
+                                  <svg className="size-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                ) : (
+                                  <svg className="size-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-2a1 1 0 11-2 0v2zm0-6a1 1 0 112 0 1 1 0 01-2 0z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-medium">
+                                  {testResults[providerId].success
+                                    ? 'Connection Successful'
+                                    : testResults[providerId].error || 'Connection Failed'}
+                                </p>
+                                {testResults[providerId].details && (
+                                  <p className="mt-1 text-sm">{testResults[providerId].details}</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })
           )}
+        </div>
 
-          {/* Add Provider button and dropdown */}
-          <div className="provider-selector-container relative pt-4">
+        {/* Add Provider Button */}
+        <div className="mt-6 flex justify-end">
+          <div className="relative provider-selector-container">
             <Button
-              variant="secondary"
-              onClick={() => setIsProviderSelectorOpen(prev => !prev)}
-              className={`flex w-full items-center justify-center font-medium ${
-                isDarkMode
-                  ? 'border-blue-700 bg-blue-600 text-white hover:bg-blue-500'
-                  : 'border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-200'
-              }`}>
-              <span className="mr-2 text-sm">+</span> <span className="text-sm">Add New Provider</span>
+              variant="primary"
+              onClick={() => setIsProviderSelectorOpen(!isProviderSelectorOpen)}
+              theme={isDarkMode ? 'dark' : 'light'}>
+              Add Provider
             </Button>
-
             {isProviderSelectorOpen && (
               <div
-                className={`absolute z-10 mt-2 w-full overflow-hidden rounded-md border ${
+                className={`absolute right-0 mt-2 w-56 origin-top-right rounded-md shadow-lg ${
                   isDarkMode
-                    ? 'border-blue-600 bg-slate-700 shadow-lg shadow-slate-900/50'
-                    : 'border-blue-200 bg-white shadow-xl shadow-blue-100/50'
+                    ? 'bg-slate-800 ring-1 ring-black ring-opacity-5'
+                    : 'bg-white ring-1 ring-black ring-opacity-5'
                 }`}>
-                <div className="py-1">
-                  {/* Map through provider types to create buttons */}
-                  {Object.values(ProviderTypeEnum)
-                    // Allow Azure to appear multiple times, but filter out other already added providers
-                    .filter(
-                      type =>
-                        type === ProviderTypeEnum.AzureOpenAI || // Always show Azure
-                        (type !== ProviderTypeEnum.CustomOpenAI &&
-                          !providersFromStorage.has(type) &&
-                          !modifiedProviders.has(type)),
-                    )
-                    .map(type => (
+                <div className="rounded-md" role="menu" aria-orientation="vertical" aria-labelledby="provider-selector">
+                  <div
+                    className={`border-b px-4 py-2 text-sm font-medium ${isDarkMode ? 'border-gray-700 text-gray-200' : 'border-gray-200 text-gray-700'}`}>
+                    Select Provider Type
+                  </div>
+                  <div className="py-1">
+                    {Object.values(ProviderTypeEnum).map(provider => (
                       <button
-                        key={type}
-                        type="button"
-                        className={`flex w-full items-center px-4 py-3 text-left text-sm ${
-                          isDarkMode
-                            ? 'text-blue-200 hover:bg-blue-600/30 hover:text-white'
-                            : 'text-blue-700 hover:bg-blue-100 hover:text-blue-800'
-                        } transition-colors duration-150`}
-                        onClick={() => handleProviderSelection(type)}>
-                        <span className="font-medium">{getDefaultDisplayNameFromProviderId(type)}</span>
+                        key={provider}
+                        className={`block w-full px-4 py-2 text-left text-sm ${
+                          isDarkMode ? 'text-gray-200 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                        role="menuitem"
+                        onClick={() => handleProviderSelection(provider)}>
+                        {getDefaultDisplayNameFromProviderId(provider)}
                       </button>
                     ))}
-
-                  {/* Custom provider button (always shown) */}
-                  <button
-                    type="button"
-                    className={`flex w-full items-center px-4 py-3 text-left text-sm ${
-                      isDarkMode
-                        ? 'text-blue-200 hover:bg-blue-600/30 hover:text-white'
-                        : 'text-blue-700 hover:bg-blue-100 hover:text-blue-800'
-                    } transition-colors duration-150`}
-                    onClick={() => handleProviderSelection(ProviderTypeEnum.CustomOpenAI)}>
-                    <span className="font-medium">OpenAI-compatible API Provider</span>
-                  </button>
+                    <button
+                      className={`block w-full px-4 py-2 text-left text-sm ${
+                        isDarkMode ? 'text-gray-200 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                      role="menuitem"
+                      onClick={() => handleProviderSelection(ProviderTypeEnum.CustomOpenAI)}>
+                      Custom OpenAI-compatible API
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1560,16 +1670,14 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
         </div>
       </div>
 
-      {/* Updated Agent Models Section */}
+      {/* Agent Model Settings Section */}
       <div
         className={`rounded-lg border ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-blue-100 bg-gray-50'} p-6 text-left shadow-sm`}>
-        <h2 className={`mb-4 text-left text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-          Model Selection
-        </h2>
+        <h2 className={`mb-4 text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>Agent Models</h2>
         <div className="space-y-4">
-          {[AgentNameEnum.Planner, AgentNameEnum.Navigator, AgentNameEnum.Validator].map(agentName => (
-            <div key={agentName}>{renderModelSelect(agentName)}</div>
-          ))}
+          {renderModelSelect(AgentNameEnum.Planner)}
+          {renderModelSelect(AgentNameEnum.Navigator)}
+          {renderModelSelect(AgentNameEnum.Validator)}
         </div>
       </div>
     </section>

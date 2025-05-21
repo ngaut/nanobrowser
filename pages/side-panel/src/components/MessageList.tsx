@@ -1,6 +1,8 @@
 import type { Message } from '@extension/storage';
 import { ACTOR_PROFILES } from '../types/message';
 import { memo } from 'react';
+import EventDetails from './EventDetails';
+import { AgentEvent } from '../types/event';
 
 interface MessageListProps {
   messages: Message[];
@@ -10,14 +12,30 @@ interface MessageListProps {
 export default memo(function MessageList({ messages, isDarkMode = false }: MessageListProps) {
   return (
     <div className="max-w-full space-y-4">
-      {messages.map((message, index) => (
-        <MessageBlock
-          key={`${message.actor}-${message.timestamp}-${index}`}
-          message={message}
-          isSameActor={index > 0 ? messages[index - 1].actor === message.actor : false}
-          isDarkMode={isDarkMode}
-        />
-      ))}
+      {messages.map((message, index) => {
+        // Check if this is an event message
+        const isEvent = 'type' in message && message.type === 'execution';
+
+        return (
+          <div
+            key={`${message.actor}-${message.timestamp}-${index}`}
+            className={`${
+              !isEvent && index > 0 && messages[index - 1].actor === message.actor
+                ? `mt-4 border-t ${isDarkMode ? 'border-sky-800/50' : 'border-sky-200/50'} pt-4 first:mt-0 first:border-t-0 first:pt-0`
+                : ''
+            }`}>
+            {isEvent ? (
+              <EventDetails event={message as unknown as AgentEvent} isDarkMode={isDarkMode} />
+            ) : (
+              <MessageBlock
+                message={message}
+                isSameActor={index > 0 ? messages[index - 1].actor === message.actor : false}
+                isDarkMode={isDarkMode}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 });

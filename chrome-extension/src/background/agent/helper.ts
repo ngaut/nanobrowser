@@ -228,6 +228,7 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
         temperature?: number;
         maxTokens?: number;
         numCtx: number;
+        format?: string;
       } = {
         model: modelConfig.modelName,
         // required but ignored by ollama
@@ -236,6 +237,8 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
         topP,
         temperature,
         maxTokens,
+        // Set format explicitly as a string
+        format: 'json',
         // ollama usually has a very small context window, so we need to set a large number for agent to work
         // It was set to 128000 in the original code, but it will cause ollama reload the models frequently if you have multiple models working together
         // not sure why, but setting it to 64000 seems to work fine
