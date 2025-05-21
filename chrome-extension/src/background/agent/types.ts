@@ -86,12 +86,14 @@ export class AgentContext {
     this.stateMessageAdded = false;
   }
 
-  async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {
+  async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string, detailsObject?: Record<string, unknown>, output?: unknown) {
     const event = new AgentEvent(actor, state, {
       taskId: this.taskId,
       step: this.nSteps,
       maxSteps: this.options.maxSteps,
       details: eventDetails,
+      detailsObject,
+      output,
     });
     await this.eventManager.emit(event);
   }

@@ -18,6 +18,10 @@
     "resolveJsonModule": true,
     "noImplicitReturns": true,
     "jsx": "react-jsx",
-    "lib": ["DOM", "ESNext"]
+    "lib": ["DOM", "ESNext"],
+    "paths": {
+      "@extension/background/*": ["../../chrome-extension/src/background/*"],
+      "@extension/sidepanel-types/*": ["../../pages/side-panel/src/types/*"]
+    }
   }
 }

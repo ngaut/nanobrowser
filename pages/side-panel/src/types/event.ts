@@ -51,6 +51,8 @@ export interface EventData {
   maxSteps: number;
   /** details is the content of the event */
   details: string;
+  /** detailsObject is a structured object for agent output (optional) */
+  detailsObject?: Record<string, unknown>;
 }
 
 export interface EventMetadata {

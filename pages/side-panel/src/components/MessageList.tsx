@@ -3,6 +3,7 @@ import { ACTOR_PROFILES } from '../types/message';
 import { memo } from 'react';
 import EventDetails from './EventDetails';
 import { AgentEvent } from '../types/event';
+import { EventType } from '../types/event';
 
 interface MessageListProps {
   messages: Message[];
@@ -13,19 +14,40 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
   return (
     <div className="max-w-full space-y-4">
       {messages.map((message, index) => {
-        // Check if this is an event message
-        const isEvent = 'type' in message && message.type === 'execution';
+        // Debug: log message structure and detailsObject presence
+        // eslint-disable-next-line no-console
+        console.log('Message:', message, 'Has detailsObject:', message.data?.detailsObject);
+
+        // Determine if this message should be treated as an AgentEvent display
+        const isAgentEventDisplay =
+          message.type === EventType.EXECUTION && message.data && message.state && message.actor;
+
+        let eventToDisplay: AgentEvent | null = null;
+        if (isAgentEventDisplay) {
+          if (message instanceof AgentEvent) {
+            eventToDisplay = message;
+          } else if (message.data && message.state) {
+            // Reconstruct AgentEvent if it's a plain object (e.g., from storage)
+            eventToDisplay = new AgentEvent(
+              message.actor,
+              message.state,
+              message.data, // data is already EnhancedEventData
+              message.timestamp,
+              message.type as EventType, // Ensure type is correctly cast if needed
+            );
+          }
+        }
 
         return (
           <div
             key={`${message.actor}-${message.timestamp}-${index}`}
             className={`${
-              !isEvent && index > 0 && messages[index - 1].actor === message.actor
+              !eventToDisplay && index > 0 && messages[index - 1].actor === message.actor
                 ? `mt-4 border-t ${isDarkMode ? 'border-sky-800/50' : 'border-sky-200/50'} pt-4 first:mt-0 first:border-t-0 first:pt-0`
                 : ''
             }`}>
-            {isEvent ? (
-              <EventDetails event={message as unknown as AgentEvent} isDarkMode={isDarkMode} />
+            {eventToDisplay ? (
+              <EventDetails event={eventToDisplay} isDarkMode={isDarkMode} />
             ) : (
               <MessageBlock
                 message={message}

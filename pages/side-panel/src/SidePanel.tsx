@@ -189,6 +189,9 @@ const SidePanel = () => {
           actor,
           content: content || '',
           timestamp: timestamp,
+          data: event.data,
+          type: event.type,
+          state: event.state,
         });
       }
 
@@ -197,6 +200,8 @@ const SidePanel = () => {
           actor,
           content: 'Showing progress...',
           timestamp: timestamp,
+          type: event.type,
+          state: event.state,
         });
       }
     },

@@ -1,3 +1,5 @@
+import type { EventData, ExecutionState, EnhancedEventData } from '@extension/sidepanel-types/event';
+
 export enum Actors {
   SYSTEM = 'system',
   USER = 'user',
@@ -10,6 +12,12 @@ export interface Message {
   actor: Actors;
   content: string;
   timestamp: number; // Unix timestamp in milliseconds
+  // Optionally include the full event data for rich display
+  data?: EnhancedEventData;
+  // Optionally include the event type to differentiate event messages
+  type?: string;
+  // Optionally include the execution state for event messages
+  state?: ExecutionState;
 }
 
 export interface ChatMessage extends Message {

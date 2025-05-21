@@ -52,7 +52,10 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
    */
   async execute(): Promise<AgentOutput<ValidatorOutput>> {
     try {
-      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_START, 'Validating...');
+      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_START, 'Validating...', {
+        status: 'validating',
+        step: this.context.nSteps,
+      });
 
       let stateMessage = await this.prompt.getUserMessage(this.context);
       if (this.plan) {
@@ -75,10 +78,18 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
       if (!modelOutput.is_valid) {
         // need to update the action results so that other agents can see the error
         const msg = `The answer is not yet correct. ${modelOutput.reason}.`;
-        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg);
+        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg, {
+          is_valid: modelOutput.is_valid,
+          reason: modelOutput.reason,
+          answer: modelOutput.answer,
+        });
         this.context.actionResults = [new ActionResult({ extractedContent: msg, includeInMemory: true })];
       } else {
-        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_OK, modelOutput.answer);
+        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_OK, modelOutput.answer, {
+          is_valid: modelOutput.is_valid,
+          reason: modelOutput.reason,
+          answer: modelOutput.answer,
+        });
       }
 
       return {
@@ -98,7 +109,10 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`Validation failed: ${errorMessage}`);
-      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, `Validation failed: ${errorMessage}`);
+      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, `Validation failed: ${errorMessage}`, {
+        error: errorMessage,
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
       return {
         id: this.id,
         error: `Validation failed: ${errorMessage}`,

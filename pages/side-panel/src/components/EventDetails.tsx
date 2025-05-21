@@ -73,6 +73,20 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
             <div className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{event.data.details}</div>
           </div>
 
+          {/* Structured Details (detailsObject) */}
+          {event.data.detailsObject && (
+            <div>
+              <div className={`text-xs font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Structured Output
+              </div>
+              <div className="mt-1 space-y-2">
+                {Object.entries(event.data.detailsObject).map(([key, value]) => (
+                  <CollapsibleDetail key={key} label={key} value={value} isDarkMode={isDarkMode} />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Metadata */}
           {event.data.metadata && (
             <div>
@@ -140,6 +154,36 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleDetail({ label, value, isDarkMode }: { label: string; value: unknown; isDarkMode: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border rounded-md">
+      <button
+        className={`w-full flex justify-between items-center px-2 py-1 text-left ${isDarkMode ? 'bg-slate-800 text-gray-200' : 'bg-gray-100 text-gray-800'}`}
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}>
+        <span className="capitalize font-medium">{label.replace(/_/g, ' ')}</span>
+        <svg
+          className={`size-4 transform transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className={`px-3 py-2 text-sm ${isDarkMode ? 'bg-slate-900 text-gray-200' : 'bg-white text-gray-800'}`}>
+          {typeof value === 'object' ? (
+            <pre className="whitespace-pre-wrap break-words">{JSON.stringify(value, null, 2)}</pre>
+          ) : (
+            String(value)
           )}
         </div>
       )}

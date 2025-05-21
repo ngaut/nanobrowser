@@ -133,7 +133,10 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let cancelled = false;
 
     try {
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...');
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...', {
+        status: 'navigating',
+        step: this.context.nSteps,
+      });
 
       const messageManager = this.context.messageManager;
       // add the browser state message
@@ -169,7 +172,10 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         return agentOutput;
       }
       // emit event
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_OK, 'Navigation done');
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_OK, 'Navigation done', {
+        current_state: modelOutput.current_state,
+        action: modelOutput.action,
+      });
       let done = false;
       if (actionResults.length > 0 && actionResults[actionResults.length - 1].isDone) {
         done = true;
@@ -195,7 +201,10 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorString = `Navigation failed: ${errorMessage}`;
       logger.error(errorString);
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString);
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString, {
+        error: errorMessage,
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
       agentOutput.error = errorMessage;
       return agentOutput;
     } finally {

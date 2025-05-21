@@ -48,7 +48,10 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
   async execute(): Promise<AgentOutput<PlannerOutput>> {
     try {
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...');
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...', undefined, {
+        status: 'planning',
+        step: this.context.nSteps,
+      });
       // get all messages from the message manager, state message should be the last one
       const messages = this.context.messageManager.getMessages();
       // Use full message history except the first one
@@ -77,7 +80,9 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       if (!modelOutput) {
         throw new Error('Failed to validate planner output');
       }
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_OK, modelOutput.next_steps);
+      this.context.messageManager.addPlan(modelOutput.next_steps);
+      // This is the resolved version based on our latest work
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_OK, 'Planning successful', undefined, modelOutput);
       logger.info('Planner output', JSON.stringify(modelOutput, null, 2));
 
       return {
@@ -98,7 +103,10 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`Planning failed: ${errorMessage}`);
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_FAIL, `Planning failed: ${errorMessage}`);
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_FAIL, `Planning failed: ${errorMessage}`, undefined, {
+        error: errorMessage,
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
       return {
         id: this.id,
         error: errorMessage,
