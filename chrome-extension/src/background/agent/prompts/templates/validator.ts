@@ -8,6 +8,7 @@ ${commonSecurityRules}
 1. Validate if the agent's last action matches the user's request and if the ultimate task is completed.
 2. Determine if the ultimate task is fully completed
 3. Answer the ultimate task based on the provided context if the task is completed
+4. When action results are provided with a source (e.g., 'Action result (from https://example.com): ...'), take this source into account when determining validity and formulating your reason and answer. If the source is critical to the answer, you may mention it.
 
 # RULES of ANSWERING THE TASK:
   - Read the task description carefully, neither miss any detailed requirements nor make up any requirements
@@ -25,10 +26,10 @@ ${commonSecurityRules}
   - is_valid: true
   - reason: describe the reason why it is valid although the task is not completed yet
   - answer: ask the user to sign in by themselves
-5. If the output is correct and the task is completed, you should respond with 
+5. If the output is correct and the task is completed, you should respond with:
   - is_valid: true
-  - reason: "Task completed"
-  - answer: The final answer to the task
+  - reason: "Task completed. Key steps to achieve the answer: [Based on the provided action history, briefly summarize the main sequence of actions, e.g., 'Searched Google for X, navigated to Y.com, then extracted the pricing information.']. Source(s): [Mention key source URLs if the answer is derived from web content and not already clear from the key steps, e.g., 'example.com/productpage.']"
+  - answer: The final answer to the task. If the answer includes information directly from specific URLs (and these are not redundant with the 'Source(s)' in the reason), include them here.
 
 # RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
 {
