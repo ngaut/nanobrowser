@@ -74,6 +74,7 @@ export interface EnhancedEventData extends EventData {
   metadata?: EventMetadata;
   relatedEvents?: string[]; // IDs of related events
   tags?: string[]; // For event categorization
+  output?: unknown; // Output of the step
 }
 
 export class AgentEvent {

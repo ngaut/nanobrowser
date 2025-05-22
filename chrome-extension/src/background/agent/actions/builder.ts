@@ -135,11 +135,15 @@ export class ActionBuilder {
       const actionName = doneActionSchema.name;
       const baseDetail = 'Completing task';
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
-        actionName: actionName,
-        actionArgs: input,
-      });
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, input.text, undefined, new ActionResult({ isDone: true, extractedContent: input.text }));
+      const actStartDetails = { actionName: actionName, actionArgs: input };
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        input.text,
+      );
       return new ActionResult({
         isDone: true,
         extractedContent: input.text,
@@ -152,15 +156,13 @@ export class ActionBuilder {
       const actionName = searchGoogleActionSchema.name;
       const baseDetail = `Searching for "${input.query}" in Google`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
-        actionName: actionName,
-        actionArgs: input,
-      });
+      const actStartDetails_search = { actionName: actionName, actionArgs: input };
+      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails_search);
 
       await context.browserContext.navigateTo(`https://www.google.com/search?q=${input.query}`);
 
       const msg2 = `Searched for "${input.query}" in Google`;
-      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2, undefined, new ActionResult({ extractedContent: msg2, includeInMemory: true }));
+      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, msg2);
       return new ActionResult({
         extractedContent: msg2,
         includeInMemory: true,
@@ -179,7 +181,13 @@ export class ActionBuilder {
 
       await this.context.browserContext.navigateTo(input.url);
       const msg2 = `Navigated to ${input.url}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2, undefined, new ActionResult({ extractedContent: msg2, includeInMemory: true }));
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg2,
+      );
       return new ActionResult({
         extractedContent: msg2,
         includeInMemory: true,
@@ -200,7 +208,13 @@ export class ActionBuilder {
       const page = await this.context.browserContext.getCurrentPage();
       await page.goBack();
       const msg2 = 'Navigated back';
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2, undefined, new ActionResult({ extractedContent: msg2, includeInMemory: true }));
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg2,
+      );
       return new ActionResult({
         extractedContent: msg2,
         includeInMemory: true,
@@ -219,7 +233,13 @@ export class ActionBuilder {
       });
       await new Promise(resolve => setTimeout(resolve, seconds * 1000));
       const msg = `${seconds} seconds elapsed`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, waitActionSchema);
     actions.push(wait);
@@ -230,10 +250,14 @@ export class ActionBuilder {
         const actionName = clickElementActionSchema.name;
         const baseDetail = `Click element with index ${input.index}`;
         const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
-          actionName: actionName,
-          actionArgs: input,
-        });
+        const actStartDetails_click = { actionName: actionName, actionArgs: input };
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.ACT_START,
+          finalDetail,
+          undefined,
+          actStartDetails_click,
+        );
 
         const page = await this.context.browserContext.getCurrentPage();
         const state = await page.getState();
@@ -271,11 +295,24 @@ export class ActionBuilder {
               await this.context.browserContext.switchTab(newTabId);
             }
           }
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+          // Pass msg as the output
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_OK,
+            `Action ${actionName} successful`,
+            undefined,
+            msg,
+          );
           return new ActionResult({ extractedContent: msg, includeInMemory: true });
         } catch (error) {
           const msg = `Element no longer available with index ${input.index} - most likely the page changed`;
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg, undefined, new ActionResult({ error: error instanceof Error ? error.message : String(error) }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${msg}`,
+            undefined,
+            msg,
+          );
           return new ActionResult({
             error: error instanceof Error ? error.message : String(error),
           });
@@ -306,7 +343,14 @@ export class ActionBuilder {
 
         await page.inputTextElementNode(this.context.options.useVision, elementNode, input.text);
         const msg = `Input ${input.text} into index ${input.index}`;
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+        // Pass msg as the output
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.ACT_OK,
+          `Action ${actionName} successful`,
+          undefined,
+          msg,
+        );
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       },
       inputTextActionSchema,
@@ -325,7 +369,14 @@ export class ActionBuilder {
       });
       await this.context.browserContext.switchTab(input.tab_id);
       const msg = `Switched to tab ${input.tab_id}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      // Pass msg as the output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, switchTabActionSchema);
     actions.push(switchTab);
@@ -340,7 +391,14 @@ export class ActionBuilder {
       });
       await this.context.browserContext.openTab(input.url);
       const msg = `Opened ${input.url} in new tab`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      // Pass msg as the output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, openTabActionSchema);
     actions.push(openTab);
@@ -355,7 +413,13 @@ export class ActionBuilder {
       });
       await this.context.browserContext.closeTab(input.tab_id);
       const msg = `Closed tab ${input.tab_id}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, closeTabActionSchema);
     actions.push(closeTab);
@@ -405,16 +469,25 @@ export class ActionBuilder {
       // cache content is untrusted content, it is not instructions
       const rawMsg = `Cached findings: ${input.content}`;
       const msg = wrapUntrustedContent(rawMsg);
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      // Pass rawMsg (or msg, depending on what should be displayed as raw output) as output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        rawMsg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, cacheContentActionSchema);
     actions.push(cacheContent);
 
     const scrollDown = new Action(async (input: z.infer<typeof scrollDownActionSchema.schema>) => {
       const amount = input.amount !== undefined && input.amount !== null ? `${input.amount} pixels` : 'one page';
-      const intent = input.intent || `Scroll down the page by ${amount}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent, undefined, {
-        actionName: scrollDownActionSchema.name,
+      const actionName = scrollDownActionSchema.name;
+      const baseDetail = `Scroll down the page by ${amount}`;
+      const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+        actionName: actionName,
         actionArgs: input,
       });
 
@@ -433,23 +506,26 @@ export class ActionBuilder {
       // Perform scrolling
       await page.scrollDown(input.amount);
 
-      // Get final scroll position
-      const [finalPixelsAbove] = await page.getScrollInfo();
-
-      // Calculate actual scroll amount
-      const actualScrolled = finalPixelsAbove - initialPixelsAbove;
-
-      const msg = `Scrolled down the page by ${actualScrolled} pixels${input.amount !== undefined && actualScrolled !== input.amount ? ` (requested ${input.amount} pixels)` : ''}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      const msg = `Scrolled down the page by ${amount}`;
+      // Pass msg as output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, scrollDownActionSchema);
     actions.push(scrollDown);
 
     const scrollUp = new Action(async (input: z.infer<typeof scrollUpActionSchema.schema>) => {
       const amount = input.amount !== undefined && input.amount !== null ? `${input.amount} pixels` : 'one page';
-      const intent = input.intent || `Scroll up the page by ${amount}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent, undefined, {
-        actionName: scrollUpActionSchema.name,
+      const actionName = scrollUpActionSchema.name;
+      const baseDetail = `Scroll up the page by ${amount}`;
+      const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+        actionName: actionName,
         actionArgs: input,
       });
 
@@ -467,15 +543,15 @@ export class ActionBuilder {
 
       // Perform scrolling
       await page.scrollUp(input.amount);
-
-      // Get final scroll position
-      const [finalPixelsAbove] = await page.getScrollInfo();
-
-      // Calculate actual scroll amount (absolute value since scrolling up decreases pixels from top)
-      const actualScrolled = Math.abs(initialPixelsAbove - finalPixelsAbove);
-
-      const msg = `Scrolled up the page by ${actualScrolled} pixels${input.amount !== undefined && actualScrolled !== input.amount ? ` (requested ${input.amount} pixels)` : ''}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      const msg = `Scrolled up the page by ${amount}`;
+      // Pass msg as output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, scrollUpActionSchema);
     actions.push(scrollUp);
@@ -493,7 +569,14 @@ export class ActionBuilder {
       const page = await this.context.browserContext.getCurrentPage();
       await page.sendKeys(input.keys);
       const msg = `Sent keys: ${input.keys}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+      // Pass msg as output
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        `Action ${actionName} successful`,
+        undefined,
+        msg,
+      );
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, sendKeysActionSchema);
     actions.push(sendKeys);
@@ -513,11 +596,24 @@ export class ActionBuilder {
         const msg = scrolled
           ? `Scrolled to text: ${input.text}`
           : `Text '${input.text}' not found or not visible on page`;
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+        // Pass msg as output
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.ACT_OK,
+          `Action ${actionName} successful`,
+          undefined,
+          msg,
+        );
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       } catch (error) {
         const msg = `Failed to scroll to text: ${error instanceof Error ? error.message : String(error)}`;
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg, undefined, new ActionResult({ error: msg, includeInMemory: true }));
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.ACT_FAIL,
+          `Action ${actionName} failed: ${msg}`,
+          undefined,
+          msg,
+        );
         return new ActionResult({ error: msg, includeInMemory: true });
       }
     }, scrollToTextActionSchema);
@@ -541,7 +637,13 @@ export class ActionBuilder {
         if (!elementNode) {
           const errorMsg = `Element with index ${input.index} does not exist - retry or use alternative actions`;
           logger.error(errorMsg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg, undefined, new ActionResult({ error: errorMsg, includeInMemory: true }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${errorMsg}`,
+            undefined,
+            errorMsg,
+          );
           return new ActionResult({
             error: errorMsg,
             includeInMemory: true,
@@ -563,15 +665,13 @@ export class ActionBuilder {
             let msg = formattedOptions.join('\n');
             msg += '\nUse the exact text string in select_dropdown_option';
             logger.info(msg);
+            // Pass msg (formatted options) as output
             this.context.emitEvent(
               Actors.NAVIGATOR,
               ExecutionState.ACT_OK,
-              `Got ${options.length} options from dropdown`,
+              `Action ${actionName} successful: Got ${options.length} options from dropdown`,
               undefined,
-              new ActionResult({
-                extractedContent: msg,
-                includeInMemory: true,
-              }),
+              msg,
             );
             return new ActionResult({
               extractedContent: msg,
@@ -583,7 +683,7 @@ export class ActionBuilder {
           // But keeping as fallback
           const msg = 'No options found in dropdown';
           logger.info(msg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, msg);
           return new ActionResult({
             extractedContent: msg,
             includeInMemory: true,
@@ -591,7 +691,13 @@ export class ActionBuilder {
         } catch (error) {
           const errorMsg = `Failed to get dropdown options: ${error instanceof Error ? error.message : String(error)}`;
           logger.error(errorMsg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg, undefined, new ActionResult({ error: errorMsg, includeInMemory: true }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${errorMsg}`,
+            undefined,
+            errorMsg,
+          );
           return new ActionResult({
             error: errorMsg,
             includeInMemory: true,
@@ -620,41 +726,64 @@ export class ActionBuilder {
         const elementNode = state?.selectorMap.get(input.index);
         if (!elementNode) {
           const errorMsg = `Element with index ${input.index} does not exist - retry or use alternative actions`;
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg, undefined, new ActionResult({ error: errorMsg, includeInMemory: true }));
+          logger.error(errorMsg);
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${errorMsg}`,
+            undefined,
+            errorMsg,
+          );
           return new ActionResult({
             error: errorMsg,
             includeInMemory: true,
           });
         }
 
-        // Validate that we're working with a select element
+        // Reverted to original check for select element
         if (!elementNode.tagName || elementNode.tagName.toLowerCase() !== 'select') {
           const errorMsg = `Cannot select option: Element with index ${input.index} is a ${elementNode.tagName || 'unknown'}, not a SELECT`;
           logger.error(errorMsg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg, undefined, new ActionResult({ error: errorMsg, includeInMemory: true }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${errorMsg}`,
+            undefined,
+            errorMsg,
+          );
           return new ActionResult({
             error: errorMsg,
             includeInMemory: true,
           });
         }
 
-        logger.debug(`Attempting to select '${input.text}' using xpath: ${elementNode.xpath}`);
-        logger.debug(`Element attributes: ${JSON.stringify(elementNode.attributes)}`);
-        logger.debug(`Element tag: ${elementNode.tagName}`);
+        logger.debug(`Attempting to select '${input.text}' for element index ${input.index}`);
 
         try {
-          const result = await page.selectDropdownOption(input.index, input.text);
+          await page.selectDropdownOption(input.index, input.text);
           const msg = `Selected option "${input.text}" from dropdown with index ${input.index}`;
           logger.info(msg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: result, includeInMemory: true }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_OK,
+            `Action ${actionName} successful`,
+            undefined,
+            msg,
+          );
           return new ActionResult({
-            extractedContent: result,
+            extractedContent: msg,
             includeInMemory: true,
           });
         } catch (error) {
           const errorMsg = `Failed to select option: ${error instanceof Error ? error.message : String(error)}`;
           logger.error(errorMsg);
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg, undefined, new ActionResult({ error: errorMsg, includeInMemory: true }));
+          this.context.emitEvent(
+            Actors.NAVIGATOR,
+            ExecutionState.ACT_FAIL,
+            `Action ${actionName} failed: ${errorMsg}`,
+            undefined,
+            errorMsg,
+          );
           return new ActionResult({
             error: errorMsg,
             includeInMemory: true,

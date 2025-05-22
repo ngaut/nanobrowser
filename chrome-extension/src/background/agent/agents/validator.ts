@@ -91,7 +91,7 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
         // Could also look for AIMessages from Navigator if they represent its final output for a step.
       }
 
-      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_START, 'Validating...', {
+      const validatorInputDetails = {
         status: 'validating',
         step: this.context.nSteps,
         inputs: {
@@ -99,7 +99,14 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
           originalPlan,
           dataToValidate,
         },
-      });
+      };
+      this.context.emitEvent(
+        Actors.VALIDATOR,
+        ExecutionState.STEP_START,
+        'Validating...',
+        undefined,
+        validatorInputDetails,
+      );
 
       let stateMessage = await this.prompt.getUserMessage(this.context);
       if (this.plan) {
@@ -122,18 +129,21 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
       if (!modelOutput.is_valid) {
         // need to update the action results so that other agents can see the error
         const msg = `The answer is not yet correct. ${modelOutput.reason}.`;
-        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg, {
+        const validationFailDetails = {
           is_valid: modelOutput.is_valid,
           reason: modelOutput.reason,
           answer: modelOutput.answer,
-        });
+        };
+        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg, undefined, validationFailDetails);
         this.context.actionResults = [new ActionResult({ extractedContent: msg, includeInMemory: true })];
       } else {
-        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_OK, modelOutput.answer, {
-          is_valid: modelOutput.is_valid,
-          reason: modelOutput.reason,
-          answer: modelOutput.answer,
-        });
+        this.context.emitEvent(
+          Actors.VALIDATOR,
+          ExecutionState.STEP_OK,
+          `Validation successful: ${modelOutput.answer}`,
+          undefined,
+          modelOutput.answer,
+        );
       }
 
       return {

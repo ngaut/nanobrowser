@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type BrowserContext from '../browser/context';
 import type MessageManager from './messages/service';
 import type { EventManager } from './event/manager';
-import { type Actors, type ExecutionState, AgentEvent } from './event/types';
+import { type Actors, type ExecutionState, AgentEvent, type EventData } from './event/types';
 
 export interface AgentOptions {
   maxSteps: number;
@@ -86,15 +86,25 @@ export class AgentContext {
     this.stateMessageAdded = false;
   }
 
-  async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string, detailsObject?: Record<string, unknown>, output?: unknown) {
-    const event = new AgentEvent(actor, state, {
+  async emitEvent(
+    actor: Actors,
+    state: ExecutionState,
+    eventDetails: string,
+    detailsObject?: Record<string, unknown>,
+    output?: unknown,
+  ) {
+    const eventData: EventData = {
       taskId: this.taskId,
       step: this.nSteps,
       maxSteps: this.options.maxSteps,
       details: eventDetails,
       detailsObject,
-      output,
-    });
+    };
+    // Conditionally add output to the event data if it's provided
+    if (output !== undefined) {
+      (eventData as any).output = output;
+    }
+    const event = new AgentEvent(actor, state, eventData);
     await this.eventManager.emit(event);
   }
 

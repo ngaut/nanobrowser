@@ -157,14 +157,21 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
       }
 
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...', {
+      const navigatorInputDetails = {
         status: 'navigating',
         step: this.context.nSteps,
         inputs: {
           taskInstruction,
           activePlan,
         },
-      });
+      };
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.STEP_START,
+        'Navigating...',
+        undefined,
+        navigatorInputDetails,
+      );
 
       const messageManager = this.context.messageManager;
       // add the browser state message
@@ -200,10 +207,13 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         return agentOutput;
       }
       // emit event
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_OK, 'Navigation done', {
-        current_state: modelOutput.current_state,
-        action: modelOutput.action,
-      });
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.STEP_OK,
+        'Navigation done',
+        undefined,
+        this.context.actionResults,
+      );
       let done = false;
       if (actionResults.length > 0 && actionResults[actionResults.length - 1].isDone) {
         done = true;
@@ -229,17 +239,20 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorString = `Navigation failed: ${errorMessage}`;
       logger.error(errorString);
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString, {
+      const errorDetails = {
         error: errorMessage,
         errorStack: error instanceof Error ? error.stack : undefined,
-      });
+      };
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString, undefined, errorDetails);
       agentOutput.error = errorMessage;
       return agentOutput;
     } finally {
       // if the task is cancelled, remove the last state message from memory and emit event
       if (cancelled) {
         this.removeLastStateMessageFromMemory();
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, 'Navigation cancelled');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, 'Navigation cancelled', undefined, {
+          status: 'cancelled',
+        });
       }
     }
   }

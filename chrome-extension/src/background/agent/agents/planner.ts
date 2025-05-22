@@ -73,14 +73,15 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         return `${actorName}: ${typeof msg.content === 'string' ? msg.content.substring(0, 150) + (msg.content.length > 150 ? '...' : '') : '[Non-string content]'}`;
       });
 
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...', undefined, {
+      const plannerInputDetails = {
         status: 'planning',
         step: this.context.nSteps,
         inputs: {
           taskInstruction,
           recentHistory,
         },
-      });
+      };
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...', undefined, plannerInputDetails);
       // get all messages from the message manager, state message should be the last one
       const messages = this.context.messageManager.getMessages();
       // Use full message history except the first one
@@ -110,9 +111,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         throw new Error('Failed to validate planner output');
       }
       this.context.messageManager.addPlan(modelOutput.next_steps);
-      // This is the resolved version based on our latest work
       this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_OK, 'Planning successful', undefined, modelOutput);
-      logger.info('Planner output', JSON.stringify(modelOutput, null, 2));
 
       return {
         id: this.id,
@@ -132,10 +131,17 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`Planning failed: ${errorMessage}`);
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_FAIL, `Planning failed: ${errorMessage}`, undefined, {
+      const errorDetails = {
         error: errorMessage,
         errorStack: error instanceof Error ? error.stack : undefined,
-      });
+      };
+      this.context.emitEvent(
+        Actors.PLANNER,
+        ExecutionState.STEP_FAIL,
+        `Planning failed: ${errorMessage}`,
+        undefined,
+        errorDetails,
+      );
       return {
         id: this.id,
         error: errorMessage,

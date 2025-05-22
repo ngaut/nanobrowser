@@ -74,7 +74,7 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
           </div>
 
           {/* Structured Details (detailsObject) */}
-          {event.data.detailsObject && (
+          {event.data.detailsObject && typeof event.data.detailsObject === 'object' && (
             <div>
               <div className={`text-xs font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 Structured Output
@@ -83,6 +83,22 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
                 {Object.entries(event.data.detailsObject).map(([key, value]) => (
                   <CollapsibleDetail key={key} label={key} value={value} isDarkMode={isDarkMode} />
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Output */}
+          {event.data.output && (
+            <div>
+              <div className={`text-xs font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Output</div>
+              <div className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                {typeof event.data.output === 'object' && event.data.output !== null ? (
+                  <pre className={`mt-1 rounded p-1 ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                    {JSON.stringify(event.data.output, null, 2)}
+                  </pre>
+                ) : (
+                  String(event.data.output)
+                )}
               </div>
             </div>
           )}
