@@ -225,7 +225,7 @@ window.buildDomTree = (
       // Get element client rects
       const rects = element.getClientRects(); // Use getClientRects()
 
-      if (!rects || rects.length === 0) return index; // Exit if no rects
+      if (!rects || rects.length === 0 || typeof rects[Symbol.iterator] !== 'function') return index; // Exit if no rects or not iterable
 
       // Generate a color based on the index
       const colors = [
@@ -254,27 +254,29 @@ window.buildDomTree = (
         iframeOffset.y = iframeRect.top;
       }
 
-      // Create highlight overlays for each client rect
-      for (const rect of rects) {
-        if (rect.width === 0 || rect.height === 0) continue; // Skip empty rects
+      // Create highlight overlays for each client rect - add safety check
+      if (rects && typeof rects[Symbol.iterator] === 'function') {
+        for (const rect of rects) {
+          if (rect.width === 0 || rect.height === 0) continue; // Skip empty rects
 
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.border = `2px solid ${baseColor}`;
-        overlay.style.backgroundColor = backgroundColor;
-        overlay.style.pointerEvents = 'none';
-        overlay.style.boxSizing = 'border-box';
+          const overlay = document.createElement('div');
+          overlay.style.position = 'fixed';
+          overlay.style.border = `2px solid ${baseColor}`;
+          overlay.style.backgroundColor = backgroundColor;
+          overlay.style.pointerEvents = 'none';
+          overlay.style.boxSizing = 'border-box';
 
-        const top = rect.top + iframeOffset.y;
-        const left = rect.left + iframeOffset.x;
+          const top = rect.top + iframeOffset.y;
+          const left = rect.left + iframeOffset.x;
 
-        overlay.style.top = `${top}px`;
-        overlay.style.left = `${left}px`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
+          overlay.style.top = `${top}px`;
+          overlay.style.left = `${left}px`;
+          overlay.style.width = `${rect.width}px`;
+          overlay.style.height = `${rect.height}px`;
 
-        container.appendChild(overlay);
-        overlays.push({ element: overlay, initialRect: rect }); // Store overlay and its rect
+          container.appendChild(overlay);
+          overlays.push({ element: overlay, initialRect: rect }); // Store overlay and its rect
+        }
       }
 
       // Create and position a single label relative to the first rect
@@ -325,29 +327,51 @@ window.buildDomTree = (
           newIframeOffset.y = iframeRect.top;
         }
 
-        // Update each overlay
-        overlays.forEach((overlayData, i) => {
-          if (i < newRects.length) {
-            // Check if rect still exists
-            const newRect = newRects[i];
-            const newTop = newRect.top + newIframeOffset.y;
-            const newLeft = newRect.left + newIframeOffset.x;
-
-            overlayData.element.style.top = `${newTop}px`;
-            overlayData.element.style.left = `${newLeft}px`;
-            overlayData.element.style.width = `${newRect.width}px`;
-            overlayData.element.style.height = `${newRect.height}px`;
-            overlayData.element.style.display = newRect.width === 0 || newRect.height === 0 ? 'none' : 'block';
-          } else {
-            // If fewer rects now, hide extra overlays
-            overlayData.element.style.display = 'none';
+        // Add safety check for newRects iteration
+        if (!newRects || typeof newRects[Symbol.iterator] !== 'function') {
+          // Hide all overlays and label if rects are not iterable - add safety check for overlays
+          if (Array.isArray(overlays) && overlays.length > 0) {
+            overlays.forEach(overlayData => {
+              if (overlayData && overlayData.element) {
+                overlayData.element.style.display = 'none';
+              }
+            });
           }
-        });
+          if (label) {
+            label.style.display = 'none';
+          }
+          return;
+        }
 
-        // If there are fewer new rects than overlays, hide the extras
-        if (newRects.length < overlays.length) {
+        // Update each overlay - add safety check for overlays
+        if (Array.isArray(overlays) && overlays.length > 0) {
+          overlays.forEach((overlayData, i) => {
+            if (!overlayData || !overlayData.element) return; // Skip invalid overlay data
+
+            if (i < newRects.length) {
+              // Check if rect still exists
+              const newRect = newRects[i];
+              const newTop = newRect.top + newIframeOffset.y;
+              const newLeft = newRect.left + newIframeOffset.x;
+
+              overlayData.element.style.top = `${newTop}px`;
+              overlayData.element.style.left = `${newLeft}px`;
+              overlayData.element.style.width = `${newRect.width}px`;
+              overlayData.element.style.height = `${newRect.height}px`;
+              overlayData.element.style.display = newRect.width === 0 || newRect.height === 0 ? 'none' : 'block';
+            } else {
+              // If fewer rects now, hide extra overlays
+              overlayData.element.style.display = 'none';
+            }
+          });
+        }
+
+        // If there are fewer new rects than overlays, hide the extras - add safety check
+        if (Array.isArray(overlays) && newRects.length < overlays.length) {
           for (let i = newRects.length; i < overlays.length; i++) {
-            overlays[i].element.style.display = 'none';
+            if (overlays[i] && overlays[i].element) {
+              overlays[i].element.style.display = 'none';
+            }
           }
         }
 
@@ -434,7 +458,7 @@ window.buildDomTree = (
       range.selectNodeContents(textNode);
       const rects = range.getClientRects(); // Use getClientRects for Range
 
-      if (!rects || rects.length === 0) {
+      if (!rects || rects.length === 0 || typeof rects[Symbol.iterator] !== 'function') {
         return false;
       }
 
@@ -731,8 +755,8 @@ window.buildDomTree = (
   function isTopElement(element) {
     const rects = element.getClientRects(); // Use getClientRects
 
-    if (!rects || rects.length === 0) {
-      return false; // No geometry, cannot be top
+    if (!rects || rects.length === 0 || typeof rects[Symbol.iterator] !== 'function') {
+      return false; // No geometry or not iterable, cannot be top
     }
 
     let isAnyRectInViewport = false;
@@ -821,8 +845,8 @@ window.buildDomTree = (
 
     const rects = element.getClientRects(); // Use getClientRects
 
-    if (!rects || rects.length === 0) {
-      // Fallback to getBoundingClientRect if getClientRects is empty,
+    if (!rects || rects.length === 0 || typeof rects[Symbol.iterator] !== 'function') {
+      // Fallback to getBoundingClientRect if getClientRects is empty or not iterable,
       // useful for elements like <svg> that might not have client rects but have a bounding box.
       const boundingRect = getCachedBoundingRect(element);
       if (!boundingRect || boundingRect.width === 0 || boundingRect.height === 0) {
@@ -1175,8 +1199,11 @@ window.buildDomTree = (
       node.tagName.toLowerCase() === 'body'
     ) {
       const attributeNames = node.getAttributeNames?.() || [];
-      for (const name of attributeNames) {
-        nodeData.attributes[name] = node.getAttribute(name);
+      // Add safety check for attributeNames iteration
+      if (Array.isArray(attributeNames) && typeof attributeNames[Symbol.iterator] === 'function') {
+        for (const name of attributeNames) {
+          nodeData.attributes[name] = node.getAttribute(name);
+        }
       }
     }
 
@@ -1281,17 +1308,31 @@ window.buildDomTree = (
   if (debugMode && PERF_METRICS) {
     // Convert timings to seconds and add useful derived metrics
     if (PERF_METRICS.timings && typeof PERF_METRICS.timings === 'object') {
-      Object.keys(PERF_METRICS.timings).forEach(key => {
-        PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
-      });
+      try {
+        const timingKeys = Object.keys(PERF_METRICS.timings);
+        if (Array.isArray(timingKeys)) {
+          timingKeys.forEach(key => {
+            PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
+          });
+        }
+      } catch (error) {
+        console.warn('Error processing timings:', error);
+      }
     }
 
     if (PERF_METRICS.buildDomTreeBreakdown && typeof PERF_METRICS.buildDomTreeBreakdown === 'object') {
-      Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
-        if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
-          PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+      try {
+        const breakdownKeys = Object.keys(PERF_METRICS.buildDomTreeBreakdown);
+        if (Array.isArray(breakdownKeys)) {
+          breakdownKeys.forEach(key => {
+            if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
+              PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+            }
+          });
         }
-      });
+      } catch (error) {
+        console.warn('Error processing buildDomTreeBreakdown:', error);
+      }
     }
 
     // Add some useful derived metrics
@@ -1307,13 +1348,20 @@ window.buildDomTree = (
 
     // Add average time per operation to the metrics
     if (PERF_METRICS.buildDomTreeBreakdown && PERF_METRICS.buildDomTreeBreakdown.domOperations) {
-      Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
-        const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
-        const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
-        if (count > 0) {
-          PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+      try {
+        const operationKeys = Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations);
+        if (Array.isArray(operationKeys)) {
+          operationKeys.forEach(op => {
+            const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
+            const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
+            if (count > 0) {
+              PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+            }
+          });
         }
-      });
+      } catch (error) {
+        console.warn('Error processing domOperations:', error);
+      }
     }
 
     // Calculate cache hit rates

@@ -83,9 +83,27 @@ export class DOMTreeProcessor {
           ],
         });
 
-        const evalPage = results[0]?.result as unknown as BuildDomTreeResult;
-        if (!evalPage || !evalPage.map || !evalPage.rootId) {
-          throw new BrowserError('Failed to build DOM tree: No result returned or invalid structure');
+        // Add comprehensive safety checks for script execution results
+        if (!results || !Array.isArray(results) || results.length === 0) {
+          throw new BrowserError('Failed to build DOM tree: No results from script execution');
+        }
+
+        const result = results[0];
+        if (!result || typeof result !== 'object' || !('result' in result)) {
+          throw new BrowserError('Failed to build DOM tree: Invalid result structure from script execution');
+        }
+
+        const evalPage = result.result as unknown as BuildDomTreeResult;
+        if (!evalPage || typeof evalPage !== 'object') {
+          throw new BrowserError('Failed to build DOM tree: evalPage is not an object');
+        }
+
+        if (!evalPage.map || typeof evalPage.map !== 'object' || Array.isArray(evalPage.map)) {
+          throw new BrowserError('Failed to build DOM tree: evalPage.map is not a valid object');
+        }
+
+        if (!evalPage.rootId || typeof evalPage.rootId !== 'string') {
+          throw new BrowserError('Failed to build DOM tree: evalPage.rootId is not a valid string');
         }
 
         // Log performance metrics in debug mode
@@ -97,7 +115,7 @@ export class DOMTreeProcessor {
           attempt,
           tabId,
           url,
-          nodeCount: Object.keys(evalPage.map).length,
+          nodeCount: evalPage.map && typeof evalPage.map === 'object' ? Object.keys(evalPage.map).length : 0,
         });
 
         return this.constructDomTree(evalPage);
@@ -117,8 +135,7 @@ export class DOMTreeProcessor {
     }
 
     // If we get here, all retries failed
-    logger.error('All DOM tree build attempts failed', {
-      error: lastError?.message,
+    logger.error('All DOM tree build attempts failed', lastError || new Error('Unknown error'), {
       tabId,
       url,
     });
@@ -181,51 +198,96 @@ export class DOMTreeProcessor {
     const jsNodeMap = evalPage.map;
     const jsRootId = evalPage.rootId;
 
+    // Validate jsNodeMap before iteration
+    if (!jsNodeMap || typeof jsNodeMap !== 'object' || Array.isArray(jsNodeMap)) {
+      const errorMessage = `Invalid jsNodeMap structure: type=${typeof jsNodeMap}, isArray=${Array.isArray(jsNodeMap)}`;
+      logger.error('Invalid jsNodeMap structure', new ValidationError(errorMessage), {
+        jsNodeMap: jsNodeMap,
+      });
+      throw new ValidationError('Failed to build DOM tree: Invalid node map structure');
+    }
+
     const selectorMap = new Map<number, DOMElementNode>();
     const nodeMap: Record<string, DOMBaseNode> = {};
 
-    // First pass: create all nodes
-    for (const [id, nodeData] of Object.entries(jsNodeMap)) {
-      const [node] = this.parseNode(nodeData);
-      if (node === null) {
-        continue;
+    // First pass: create all nodes - add safety check for Object.entries
+    try {
+      const entries = Object.entries(jsNodeMap);
+      if (!Array.isArray(entries)) {
+        throw new ValidationError('Object.entries did not return an array');
       }
 
-      nodeMap[id] = node;
-
-      // Add to selector map if it has a highlight index
-      if (node instanceof DOMElementNode && node.highlightIndex !== undefined && node.highlightIndex !== null) {
-        selectorMap.set(node.highlightIndex, node);
-      }
-    }
-
-    // Second pass: build the tree structure
-    for (const [id, node] of Object.entries(nodeMap)) {
-      if (node instanceof DOMElementNode) {
-        const nodeData = jsNodeMap[id];
-        const childrenIds = 'children' in nodeData ? nodeData.children : [];
-
-        // Ensure childrenIds is always an array before iteration
-        if (!Array.isArray(childrenIds)) {
-          logger.warn('Invalid children data structure, expected array', {
-            nodeId: id,
-            tagName: node.tagName,
-            childrenType: typeof childrenIds,
-            childrenValue: childrenIds,
-          });
+      for (const [id, nodeData] of entries) {
+        if (!nodeData || typeof nodeData !== 'object') {
+          logger.warn('Skipping invalid node data', { id, nodeDataType: typeof nodeData });
           continue;
         }
 
-        for (const childId of childrenIds) {
-          if (!(childId in nodeMap)) {
+        const [node] = this.parseNode(nodeData);
+        if (node === null) {
+          continue;
+        }
+
+        nodeMap[id] = node;
+
+        // Add to selector map if it has a highlight index
+        if (node instanceof DOMElementNode && node.highlightIndex !== undefined && node.highlightIndex !== null) {
+          selectorMap.set(node.highlightIndex, node);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to iterate over jsNodeMap', error as Error, {
+        jsNodeMapKeys: jsNodeMap && typeof jsNodeMap === 'object' ? Object.keys(jsNodeMap).length : 'N/A',
+      });
+      throw new ValidationError(
+        `Failed to build DOM tree: Error during node iteration: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    // Second pass: build the tree structure - add safety check for Object.entries
+    try {
+      const nodeEntries = Object.entries(nodeMap);
+      if (!Array.isArray(nodeEntries)) {
+        throw new ValidationError('Object.entries for nodeMap did not return an array');
+      }
+
+      for (const [id, node] of nodeEntries) {
+        if (node instanceof DOMElementNode) {
+          const nodeData = jsNodeMap[id];
+          if (!nodeData || typeof nodeData !== 'object') {
+            logger.warn('Skipping node with invalid data in second pass', { id });
             continue;
           }
 
-          const childNode = nodeMap[childId];
-          childNode.parent = node;
-          node.children.push(childNode);
+          const childrenIds = 'children' in nodeData ? nodeData.children : [];
+
+          // Ensure childrenIds is always an array before iteration
+          if (!Array.isArray(childrenIds)) {
+            logger.warn('Invalid children data structure, expected array', {
+              nodeId: id,
+              tagName: node.tagName,
+              childrenType: typeof childrenIds,
+              childrenValue: childrenIds,
+            });
+            continue;
+          }
+
+          for (const childId of childrenIds) {
+            if (!(childId in nodeMap)) {
+              continue;
+            }
+
+            const childNode = nodeMap[childId];
+            childNode.parent = node;
+            node.children.push(childNode);
+          }
         }
       }
+    } catch (error) {
+      logger.error('Failed to build tree structure in second pass', error as Error);
+      throw new ValidationError(
+        `Failed to build DOM tree: Error during tree construction: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     const rootNode = nodeMap[jsRootId];
