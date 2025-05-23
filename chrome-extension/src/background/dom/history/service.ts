@@ -1,4 +1,4 @@
-import { DOMElementNode } from '../views';
+import { DOMElementNode } from '@src/infrastructure/dom/base-node';
 import { DOMHistoryElement, HashedDomElement } from './view';
 
 /**

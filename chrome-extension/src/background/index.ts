@@ -5,68 +5,35 @@ import {
   firewallStore,
   generalSettingsStore,
   llmProviderStore,
+  getAgentModel,
 } from '@extension/storage';
 import BrowserContext from './browser/context';
 import { Executor } from './agent/executor';
-import { createLogger } from './log';
-import { ExecutionState } from './agent/event/types';
+import type { ExecutionState } from '@src/shared/types/agent';
 import { createChatModel } from './agent/helper';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { DEFAULT_AGENT_OPTIONS } from './agent/types';
+import { DOMTextProcessor } from '@src/infrastructure/dom/text-processor';
+import { getAppConfig } from '@src/shared/config';
+import { AgentService } from '@src/infrastructure/agent/agent-service';
+import { ConfigurationError } from '@src/shared/types/errors';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 
-const logger = createLogger('background');
+const logger = createLogger('Background');
 
 const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
 
 // Setup side panel behavior
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
-
-// Function to check if script is already injected
-async function isScriptInjected(tabId: number): Promise<boolean> {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => Object.prototype.hasOwnProperty.call(window, 'buildDomTree'),
-    });
-    return results[0]?.result || false;
-  } catch (err) {
-    console.error('Failed to check script injection status:', err);
-    return false;
-  }
-}
-
-// // Function to inject the buildDomTree script
-async function injectBuildDomTree(tabId: number) {
-  try {
-    // Check if already injected
-    const alreadyInjected = await isScriptInjected(tabId);
-    if (alreadyInjected) {
-      console.log('Scripts already injected, skipping...');
-      return;
-    }
-
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['buildDomTree.js'],
-    });
-    console.log('Scripts successfully injected');
-  } catch (err) {
-    console.error('Failed to inject scripts:', err);
-  }
-}
-
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (tabId && changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
-    await injectBuildDomTree(tabId);
-  }
-});
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch(error => logger.error('Failed to set panel behavior', error as Error));
 
 // Listen for debugger detached event
 // if canceled_by_user, remove the tab from the browser context
 chrome.debugger.onDetach.addListener(async (source, reason) => {
-  console.log('Debugger detached:', source, reason);
+  logger.debug('Debugger detached', { source, reason });
   if (reason === 'canceled_by_user') {
     if (source.tabId) {
       currentExecutor?.cancel();
@@ -96,9 +63,11 @@ chrome.runtime.onConnect.addListener(port => {
 
     port.onMessage.addListener(async message => {
       try {
+        // It's useful to have access to the executor's context here if it exists
+        const executorContext = currentExecutor?.context; // Get context if executor exists
+
         switch (message.type) {
           case 'heartbeat':
-            // Acknowledge heartbeat
             port.postMessage({ type: 'heartbeat_ack' });
             break;
 
@@ -106,51 +75,56 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: 'No task provided' });
             if (!message.tabId) return port.postMessage({ type: 'error', error: 'No tab ID provided' });
 
-            logger.info('new_task', message.tabId, message.task);
-            currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
+            logger.info('[Background] new_task received:', message.tabId, message.task);
+            if (currentExecutor) {
+              // If an old executor exists, cancel it before starting a new one for a completely new task.
+              logger.info('[Background] Cancelling existing executor for new_task.');
+              await currentExecutor.cancel();
+            }
+            currentExecutor = await setupExecutor(message.taskId as string, message.task as string, browserContext);
             subscribeToExecutorEvents(currentExecutor);
-
-            const result = await currentExecutor.execute();
-            logger.info('new_task execution result', message.tabId, result);
+            await currentExecutor.execute();
+            logger.info('[Background] Initial execution cycle for new_task started.', message.tabId);
             break;
           }
           case 'follow_up_task': {
             if (!message.task) return port.postMessage({ type: 'error', error: 'No follow up task provided' });
             if (!message.tabId) return port.postMessage({ type: 'error', error: 'No tab ID provided' });
 
-            logger.info('follow_up_task', message.tabId, message.task);
-
-            // If executor exists, add follow-up task
             if (currentExecutor) {
-              currentExecutor.addFollowUpTask(message.task);
-              // Re-subscribe to events in case the previous subscription was cleaned up
-              subscribeToExecutorEvents(currentExecutor);
-              const result = await currentExecutor.execute();
-              logger.info('follow_up_task execution result', message.tabId, result);
+              logger.info('[Background] follow_up_task received:', message.tabId, message.task);
+              await currentExecutor.addFollowUpTask(message.task as string);
+              subscribeToExecutorEvents(currentExecutor); // Re-subscribe might be needed if old one cleared
+              await currentExecutor.execute();
+              logger.info('[Background] Execution cycle for follow_up_task started.', message.tabId);
             } else {
-              // executor was cleaned up, can not add follow-up task
-              logger.info('follow_up_task: executor was cleaned up, can not add follow-up task');
-              return port.postMessage({ type: 'error', error: 'Executor was cleaned up, can not add follow-up task' });
+              logger.info('[Background] follow_up_task: executor was cleaned up or not initialized. Cannot process.');
+              return port.postMessage({ type: 'error', error: 'Executor not available for follow-up task.' });
             }
             break;
           }
 
           case 'cancel_task': {
             if (!currentExecutor) return port.postMessage({ type: 'error', error: 'No task to cancel' });
+            logger.info('[Background] cancel_task received');
             await currentExecutor.cancel();
+            // currentExecutor = null; // Consider if executor should be nulled immediately after cancel
             break;
           }
 
           case 'resume_task': {
             if (!currentExecutor) return port.postMessage({ type: 'error', error: 'No task to resume' });
+            logger.info('[Background] resume_task received');
             await currentExecutor.resume();
-            return port.postMessage({ type: 'success' });
+            // resume() itself now calls execute() if not awaiting plan, so no explicit call here.
+            return port.postMessage({ type: 'success', msg: 'Resume requested.' });
           }
 
           case 'pause_task': {
             if (!currentExecutor) return port.postMessage({ type: 'error', error: 'No task to pause' });
+            logger.info('[Background] pause_task received');
             await currentExecutor.pause();
-            return port.postMessage({ type: 'success' });
+            return port.postMessage({ type: 'success', msg: 'Pause requested.' });
           }
 
           case 'screenshot': {
@@ -164,12 +138,16 @@ chrome.runtime.onConnect.addListener(port => {
           case 'state': {
             try {
               const browserState = await browserContext.getState(true);
-              const elementsText = browserState.elementTree.clickableElementsToString(
+              const elementsText = DOMTextProcessor.clickableElementsToString(
+                browserState.elementTree,
                 DEFAULT_AGENT_OPTIONS.includeAttributes,
               );
 
-              logger.info('state', browserState);
-              logger.info('interactive elements', elementsText);
+              logger.debug('Browser state retrieved', {
+                elementCount: browserState.selectorMap.size,
+                hasElementTree: !!browserState.elementTree,
+              });
+              logger.debug('Interactive elements', { elementsText });
               return port.postMessage({ type: 'success', msg: 'State printed to console' });
             } catch (error) {
               logger.error('Failed to get state:', error);
@@ -187,7 +165,7 @@ chrome.runtime.onConnect.addListener(port => {
             return port.postMessage({ type: 'error', error: 'Unknown message type' });
         }
       } catch (error) {
-        console.error('Error handling port message:', error);
+        logger.error('Error handling port message', error as Error, { messageType: message.type });
         port.postMessage({
           type: 'error',
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -197,7 +175,7 @@ chrome.runtime.onConnect.addListener(port => {
 
     port.onDisconnect.addListener(() => {
       // this event is also triggered when the side panel is closed, so we need to cancel the task
-      console.log('Side panel disconnected');
+      logger.debug('Side panel disconnected');
       currentPort = null;
       currentExecutor?.cancel();
     });
@@ -208,19 +186,19 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
   const providers = await llmProviderStore.getAllProviders();
   // if no providers, need to display the options page
   if (Object.keys(providers).length === 0) {
-    throw new Error('Please configure API keys in the settings first');
+    throw new ConfigurationError('Please configure API keys in the settings first');
   }
   const agentModels = await agentModelStore.getAllAgentModels();
   // verify if every provider used in the agent models exists in the providers
   for (const agentModel of Object.values(agentModels)) {
     if (!providers[agentModel.provider]) {
-      throw new Error(`Provider ${agentModel.provider} not found in the settings`);
+      throw new ConfigurationError(`Provider ${agentModel.provider} not found in the settings`);
     }
   }
 
   const navigatorModel = agentModels[AgentNameEnum.Navigator];
   if (!navigatorModel) {
-    throw new Error('Please choose a model for the navigator in the settings first');
+    throw new ConfigurationError('Please choose a model for the navigator in the settings first');
   }
   // Log the provider config being used for the navigator
   const navigatorProviderConfig = providers[navigatorModel.provider];

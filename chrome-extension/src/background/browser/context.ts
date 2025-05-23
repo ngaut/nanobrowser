@@ -6,11 +6,16 @@ import {
   type TabInfo,
   URLNotAllowedError,
 } from './views';
-import Page, { build_initial_state } from './page';
-import { createLogger } from '@src/background/log';
+import { Page } from '@src/infrastructure/browser/page';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 import { isUrlAllowed } from './util';
+import type { Page as PuppeteerPage } from 'puppeteer-core/lib/esm/puppeteer/api/Page.js';
+import { ActionResult } from '../agent/types';
+import { BrowserConnectionManager } from '@src/infrastructure/browser/connection-manager';
+import { BrowserError } from '@src/shared/types/errors';
 
 const logger = createLogger('BrowserContext');
+
 export default class BrowserContext {
   private _config: BrowserContextConfig;
   private _currentTabId: number | null = null;
@@ -35,7 +40,7 @@ export default class BrowserContext {
 
   private async _getOrCreatePage(tab: chrome.tabs.Tab, forceUpdate = false): Promise<Page> {
     if (!tab.id) {
-      throw new Error('Tab ID is not available');
+      throw new BrowserError('Tab ID is not available');
     }
 
     const existingPage = this._attachedPages.get(tab.id);
@@ -99,7 +104,7 @@ export default class BrowserContext {
         const newTab = await chrome.tabs.create({ url: this._config.homePageUrl });
         if (!newTab.id) {
           // this should rarely happen
-          throw new Error('No tab ID available');
+          throw new BrowserError('No tab ID available');
         }
         activeTab = newTab;
       } else {
@@ -264,7 +269,7 @@ export default class BrowserContext {
     // Create the new tab
     const tab = await chrome.tabs.create({ url, active: true });
     if (!tab.id) {
-      throw new Error('No tab ID available');
+      throw new BrowserError('No tab ID available');
     }
     // Wait for tab events
     await this.waitForTabEvents(tab.id);
@@ -320,7 +325,7 @@ export default class BrowserContext {
     const currentPage = await this.getCurrentPage();
 
     const pageState = !currentPage
-      ? build_initial_state()
+      ? Page.buildInitialState()
       : await currentPage.getState(useVision, cacheClickableElementsHashes);
     const tabInfos = await this.getTabInfos();
     const browserState: BrowserState = {

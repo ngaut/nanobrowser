@@ -1,6 +1,7 @@
 import { HumanMessage, type SystemMessage } from '@langchain/core/messages';
 import type { AgentContext } from '@src/background/agent/types';
 import { wrapUntrustedContent } from '../messages/utils';
+import { DOMTextProcessor } from '@src/infrastructure/dom/text-processor';
 
 /**
  * Abstract base class for all prompt types
@@ -26,7 +27,10 @@ abstract class BasePrompt {
    */
   async buildBrowserStateUserMessage(context: AgentContext): Promise<HumanMessage> {
     const browserState = await context.browserContext.getState(context.options.useVision);
-    const rawElementsText = browserState.elementTree.clickableElementsToString(context.options.includeAttributes);
+    const rawElementsText = DOMTextProcessor.clickableElementsToString(
+      browserState.elementTree,
+      context.options.includeAttributes,
+    );
     const hasContentAbove = (browserState.pixelsAbove || 0) > 0;
     const hasContentBelow = (browserState.pixelsBelow || 0) > 0;
 

@@ -2,7 +2,7 @@
 import { BasePrompt } from './base';
 import { type HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { AgentContext } from '@src/background/agent/types';
-import { createLogger } from '@src/background/log';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 import { navigatorSystemPromptTemplate } from './templates/navigator';
 
 const logger = createLogger('agent/prompts/navigator');

@@ -4,7 +4,8 @@
     "baseUrl": ".",
     "paths": {
       "@src/*": ["src/*"]
-    }
+    },
+    "types": ["cypress", "node"]
   },
-  "include": ["src", "utils", "vite.config.mts", "../node_modules/@types"]
+  "include": ["src", "utils", "cypress", "vite.config.mts", "../node_modules/@types"]
 }

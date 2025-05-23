@@ -10,7 +10,7 @@ import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
 import BookmarkList from './components/BookmarkList';
-import { EventType, type AgentEvent, ExecutionState } from './types/event';
+import { EventType, type AgentEvent, ExecutionState, EnhancedEventData } from './types/event';
 import './SidePanel.css';
 
 const SidePanel = () => {
@@ -73,118 +73,122 @@ const SidePanel = () => {
 
   const handleTaskState = useCallback(
     (event: AgentEvent) => {
-      const { actor, state, timestamp, data } = event;
+      const { actor, state, timestamp, data, type: eventType } = event;
       const content = data?.details;
       let skip = true;
       let displayProgress = false;
 
-      switch (actor) {
-        case Actors.SYSTEM:
-          switch (state) {
-            case ExecutionState.TASK_START:
-              // Reset historical session flag when a new task starts
-              setIsHistoricalSession(false);
-              break;
-            case ExecutionState.TASK_OK:
-              setIsFollowUpMode(true);
-              setInputEnabled(true);
-              setShowStopButton(false);
-              break;
-            case ExecutionState.TASK_FAIL:
-              setIsFollowUpMode(true);
-              setInputEnabled(true);
-              setShowStopButton(false);
-              skip = false;
-              break;
-            case ExecutionState.TASK_CANCEL:
-              setIsFollowUpMode(false);
-              setInputEnabled(true);
-              setShowStopButton(false);
-              skip = false;
-              break;
-            case ExecutionState.TASK_PAUSE:
-              break;
-            case ExecutionState.TASK_RESUME:
-              break;
-            default:
-              console.error('Invalid task state', state);
-              return;
-          }
-          break;
-        case Actors.USER:
-          break;
-        case Actors.PLANNER:
-          switch (state) {
-            case ExecutionState.STEP_START:
-              displayProgress = true;
-              skip = false;
-              break;
-            case ExecutionState.STEP_OK:
-              skip = false;
-              break;
-            case ExecutionState.STEP_FAIL:
-              skip = false;
-              break;
-            case ExecutionState.STEP_CANCEL:
-              break;
-            default:
-              console.error('Invalid step state', state);
-              return;
-          }
-          break;
-        case Actors.NAVIGATOR:
-          switch (state) {
-            case ExecutionState.STEP_START:
-              displayProgress = true;
-              skip = false;
-              break;
-            case ExecutionState.STEP_OK:
-              displayProgress = false;
-              break;
-            case ExecutionState.STEP_FAIL:
-              skip = false;
-              displayProgress = false;
-              break;
-            case ExecutionState.STEP_CANCEL:
-              displayProgress = false;
-              break;
-            case ExecutionState.ACT_START:
-              if (content !== 'cache_content') {
-                // skip to display caching content
-                skip = false;
+      if (eventType === EventType.PLAN_PROPOSED_TO_USER) {
+        console.log('🎯 PLAN_PROPOSED_TO_USER event received:', event);
+        skip = false;
+        setInputEnabled(true);
+        setShowStopButton(true);
+        console.log('🎯 Input should now be enabled');
+      } else {
+        switch (actor) {
+          case Actors.SYSTEM:
+            switch (state) {
+              case ExecutionState.TASK_START:
+                setIsHistoricalSession(false);
+                setInputEnabled(false);
+                setShowStopButton(true);
+                break;
+              case ExecutionState.TASK_OK:
+              case ExecutionState.TASK_FAIL:
+              case ExecutionState.TASK_CANCEL:
+                setIsFollowUpMode(true);
+                setInputEnabled(true);
+                setShowStopButton(false);
+                skip = state !== ExecutionState.TASK_OK;
+                break;
+              case ExecutionState.TASK_PAUSE:
+                break;
+              case ExecutionState.TASK_RESUME:
+                setInputEnabled(false);
+                setShowStopButton(true);
+                break;
+              default:
+                console.error('Invalid task state', state, event);
+                return;
+            }
+            break;
+          case Actors.USER:
+            break;
+          case Actors.PLANNER:
+            if (eventType !== EventType.PLAN_PROPOSED_TO_USER) {
+              switch (state) {
+                case ExecutionState.STEP_START:
+                  displayProgress = true;
+                  skip = false;
+                  break;
+                case ExecutionState.STEP_OK:
+                case ExecutionState.STEP_FAIL:
+                  skip = false;
+                  break;
+                case ExecutionState.STEP_CANCEL:
+                  break;
+                case ExecutionState.WAITING_USER_CONFIRMATION:
+                  // This should be handled by the PLAN_PROPOSED_TO_USER event type instead
+                  skip = false;
+                  break;
+                default:
+                  console.error('Invalid planner step state', state, event);
+                  return;
               }
-              break;
-            case ExecutionState.ACT_OK:
-              skip = true;
-              break;
-            case ExecutionState.ACT_FAIL:
-              skip = false;
-              break;
-            default:
-              console.error('Invalid action', state);
-              return;
-          }
-          break;
-        case Actors.VALIDATOR:
-          switch (state) {
-            case ExecutionState.STEP_START:
-              displayProgress = true;
-              skip = false;
-              break;
-            case ExecutionState.STEP_OK:
-              skip = false;
-              break;
-            case ExecutionState.STEP_FAIL:
-              skip = false;
-              break;
-            default:
-              console.error('Invalid validation', state);
-              return;
-          }
-          break;
-        default:
-          console.error('Unknown actor', actor);
-          return;
+            }
+            break;
+          case Actors.NAVIGATOR:
+            switch (state) {
+              case ExecutionState.STEP_START:
+                displayProgress = true;
+                skip = false;
+                break;
+              case ExecutionState.STEP_OK:
+                displayProgress = false;
+                skip = true;
+                break;
+              case ExecutionState.STEP_FAIL:
+                skip = false;
+                displayProgress = false;
+                break;
+              case ExecutionState.STEP_CANCEL:
+                displayProgress = false;
+                break;
+              case ExecutionState.ACT_START:
+                if (content !== 'cache_content') {
+                  skip = false;
+                }
+                break;
+              case ExecutionState.ACT_OK:
+                skip = true;
+                break;
+              case ExecutionState.ACT_FAIL:
+                skip = false;
+                break;
+              default:
+                console.error('Invalid action state for Navigator', state, event);
+                return;
+            }
+            break;
+          case Actors.VALIDATOR:
+            switch (state) {
+              case ExecutionState.STEP_START:
+                displayProgress = true;
+                skip = false;
+                break;
+              case ExecutionState.STEP_OK:
+              case ExecutionState.STEP_FAIL:
+                skip = false;
+                break;
+              default:
+                console.error('Invalid state for Validator', state, event);
+                return;
+            }
+            break;
+          default:
+            console.error('Unknown actor in handleTaskState', actor, event);
+            return;
+        }
       }
 
       if (!skip) {
@@ -193,7 +197,7 @@ const SidePanel = () => {
           content: content || '',
           timestamp: timestamp,
           data: event.data,
-          type: event.type,
+          type: eventType,
           state: event.state,
         });
       }
@@ -203,7 +207,7 @@ const SidePanel = () => {
           actor,
           content: 'Showing progress...',
           timestamp: timestamp,
-          type: event.type,
+          type: eventType,
           state: event.state,
         });
       }
@@ -225,7 +229,6 @@ const SidePanel = () => {
 
   // Setup connection management
   const setupConnection = useCallback(() => {
-    // Only setup if no existing connection
     if (portRef.current) {
       return;
     }
@@ -233,16 +236,29 @@ const SidePanel = () => {
     try {
       portRef.current = chrome.runtime.connect({ name: 'side-panel-connection' });
 
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       portRef.current.onMessage.addListener((message: any) => {
-        // Add type checking for message
-        if (message && message.type === EventType.EXECUTION) {
-          handleTaskState(message);
+        console.log('📨 Message received:', message);
+        if (message && (message.type === EventType.EXECUTION || message.type === EventType.PLAN_PROPOSED_TO_USER)) {
+          const receivedEvent = message as {
+            type: EventType;
+            data?: Partial<EnhancedEventData> & { detailsObject?: Record<string, unknown> };
+            actor: Actors;
+            state: ExecutionState;
+            timestamp: number;
+          };
+
+          if (receivedEvent.data) {
+            if (receivedEvent.data.detailsObject && receivedEvent.data.output === undefined) {
+              receivedEvent.data.output = receivedEvent.data.detailsObject;
+            }
+          }
+
+          console.log('📨 Calling handleTaskState with:', receivedEvent);
+          handleTaskState(receivedEvent as AgentEvent);
         } else if (message && message.type === 'error') {
-          // Handle error messages from service worker
           appendMessage({
             actor: Actors.SYSTEM,
-            content: message.error || 'Unknown error occurred',
+            content: (message as { error: string }).error || 'Unknown error occurred',
             timestamp: Date.now(),
           });
           setInputEnabled(true);
@@ -288,7 +304,6 @@ const SidePanel = () => {
         content: 'Failed to connect to service worker',
         timestamp: Date.now(),
       });
-      // Clear any references since connection failed
       portRef.current = null;
     }
   }, [handleTaskState, appendMessage, stopConnection]);

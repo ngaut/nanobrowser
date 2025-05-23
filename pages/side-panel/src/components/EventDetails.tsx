@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ReactJson, { type ReactJsonViewProps } from 'react-json-view';
-import { AgentEvent, EventStatus } from '../types/event';
+import { AgentEvent, EventStatus, EventType } from '../types/event';
 import { ACTOR_PROFILES } from '../types/message';
 import Linkify from './Linkify';
 import { Actors } from '@extension/storage';
@@ -25,7 +25,10 @@ const darkStatusColors: Record<EventStatus, { bg: string; text: string }> = {
 };
 
 export default function EventDetails({ event, isDarkMode = false }: EventDetailsProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(
+    // Expand by default if the event is a plan proposal from the planner
+    event.type === EventType.PLAN_PROPOSED_TO_USER && event.actor === Actors.PLANNER,
+  );
   const actor = ACTOR_PROFILES[event.actor as keyof typeof ACTOR_PROFILES];
   const status = event.getEventStatus();
   const colors = isDarkMode ? darkStatusColors[status] : statusColors[status];
@@ -83,6 +86,7 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
               <div className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 {(() => {
                   const output = event.data.output;
+                  const outputData = output as Record<string, any>;
                   const reactJsonProps: Omit<ReactJsonViewProps, 'src'> = {
                     theme: isDarkMode ? 'ashes' : 'rjv-default',
                     iconStyle: 'circle',
@@ -98,8 +102,6 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
                   };
 
                   if (typeof output === 'object' && output !== null) {
-                    const outputData = output as Record<string, any>;
-
                     if (event.actor === Actors.VALIDATOR) {
                       return (
                         <div className="space-y-1">
@@ -141,81 +143,93 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
                         </div>
                       );
                     } else if (event.actor === Actors.PLANNER) {
-                      return (
-                        <div className="space-y-1">
-                          {/* Custom rendering for known Planner fields */}
-                          {outputData.observation && typeof outputData.observation === 'string' && (
-                            <div>
-                              <strong>Observation:</strong>{' '}
-                              <Linkify text={outputData.observation} className="whitespace-pre-wrap" />
-                            </div>
-                          )}
-                          {outputData.challenges && typeof outputData.challenges === 'string' && (
-                            <div>
-                              <strong>Challenges:</strong>{' '}
-                              <Linkify text={outputData.challenges} className="whitespace-pre-wrap" />
-                            </div>
-                          )}
-                          {outputData.hasOwnProperty('done') && (
-                            <p>
-                              <strong>Done:</strong> {String(outputData.done)}
-                            </p>
-                          )}
-                          {outputData.next_steps && typeof outputData.next_steps === 'string' && (
-                            <div>
-                              <strong>Next Steps:</strong>{' '}
-                              <Linkify text={outputData.next_steps} className="whitespace-pre-wrap" />
-                            </div>
-                          )}
-                          {outputData.reasoning && typeof outputData.reasoning === 'string' && (
-                            <div>
-                              <strong>Reasoning:</strong>{' '}
-                              <Linkify text={outputData.reasoning} className="whitespace-pre-wrap" />
-                            </div>
-                          )}
-                          {outputData.hasOwnProperty('web_task') && (
-                            <p>
-                              <strong>Web Task:</strong> {String(outputData.web_task)}
-                            </p>
-                          )}
-                          {outputData.observationDataSource_urls &&
-                            Array.isArray(outputData.observationDataSource_urls) &&
-                            outputData.observationDataSource_urls.length > 0 && (
+                      if (event.type === EventType.PLAN_PROPOSED_TO_USER) {
+                        return (
+                          <div className="space-y-1">
+                            {outputData.understanding && typeof outputData.understanding === 'string' && (
                               <div>
-                                <strong>Observation Source URLs:</strong>
-                                <ul className="list-disc list-inside pl-4">
-                                  {(outputData.observationDataSource_urls as string[]).map((url, i) => (
-                                    <li key={i}>
-                                      <Linkify text={url} />
-                                    </li>
-                                  ))}
-                                </ul>
+                                <strong>Understanding:</strong>{' '}
+                                <Linkify text={outputData.understanding} className="whitespace-pre-wrap" />
                               </div>
                             )}
-                          {outputData.observationDataSource_descriptions &&
-                            Array.isArray(outputData.observationDataSource_descriptions) &&
-                            outputData.observationDataSource_descriptions.length > 0 && (
+                            {outputData.detailed_steps && (
                               <div>
-                                <strong>Observation Source Descriptions:</strong>
-                                <ul className="list-disc list-inside pl-4">
-                                  {(outputData.observationDataSource_descriptions as string[]).map((desc, i) => (
-                                    <li key={i} className="whitespace-pre-wrap">
-                                      <Linkify text={desc} />
-                                    </li>
-                                  ))}
-                                </ul>
+                                <strong>Detailed Steps:</strong>
+                                {typeof outputData.detailed_steps === 'string' ? (
+                                  <Linkify text={outputData.detailed_steps} className="whitespace-pre-wrap" />
+                                ) : (
+                                  Array.isArray(outputData.detailed_steps) && (
+                                    <ul className="list-disc list-inside pl-4">
+                                      {(outputData.detailed_steps as string[]).map((step, i) => (
+                                        <li key={i}>
+                                          <Linkify text={step} className="whitespace-pre-wrap" />
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )
+                                )}
                               </div>
                             )}
-                          {/* Separator and Raw JSON view for the entire Planner output */}
-                          <div className="mt-2 pt-2 border-t border-dashed">
-                            <div
-                              className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              Full Output (JSON):
+                            {outputData.clarification_questions && (
+                              <div>
+                                <strong>Clarification Questions:</strong>
+                                {typeof outputData.clarification_questions === 'string' ? (
+                                  <Linkify text={outputData.clarification_questions} className="whitespace-pre-wrap" />
+                                ) : (
+                                  Array.isArray(outputData.clarification_questions) &&
+                                  outputData.clarification_questions.length > 0 && (
+                                    <ul className="list-disc list-inside pl-4">
+                                      {(outputData.clarification_questions as string[]).map((q, i) => (
+                                        <li key={i}>
+                                          <Linkify text={q} className="whitespace-pre-wrap" />
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )
+                                )}
+                              </div>
+                            )}
+                            {outputData.hasOwnProperty('done') && (
+                              <p>
+                                <strong>Done:</strong> {String(outputData.done)}
+                              </p>
+                            )}
+                            {outputData.reasoning && typeof outputData.reasoning === 'string' && (
+                              <div>
+                                <strong>Reasoning:</strong>{' '}
+                                <Linkify text={outputData.reasoning} className="whitespace-pre-wrap" />
+                              </div>
+                            )}
+                            {outputData.hasOwnProperty('web_task') && (
+                              <p>
+                                <strong>Web Task:</strong> {String(outputData.web_task)}
+                              </p>
+                            )}
+                            {outputData.answer &&
+                              typeof outputData.answer === 'string' &&
+                              outputData.answer.trim() !== '' && (
+                                <div>
+                                  <strong>Answer:</strong>{' '}
+                                  <Linkify text={outputData.answer} className="whitespace-pre-wrap" />
+                                </div>
+                              )}
+                            <div className="mt-2 pt-2 border-t border-dashed">
+                              <div
+                                className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Full Output (JSON):
+                              </div>
+                              <ReactJson src={outputData as object} {...reactJsonProps} />
                             </div>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div>
+                            <p>Planner Output (default view):</p>
                             <ReactJson src={outputData as object} {...reactJsonProps} />
                           </div>
-                        </div>
-                      );
+                        );
+                      }
                     } else {
                       return <ReactJson src={outputData as object} {...reactJsonProps} />;
                     }

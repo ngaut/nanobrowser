@@ -55,7 +55,8 @@ const manifest = withSidePanel({
   content_scripts: [
     {
       matches: ['http://*/*', 'https://*/*', '<all_urls>'],
-      js: ['content/index.iife.js'],
+      js: ['buildDomTree.js', 'content/index.iife.js'],
+      run_at: 'document_start',
     },
   ],
   web_accessible_resources: [

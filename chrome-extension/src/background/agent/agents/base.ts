@@ -3,7 +3,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { AgentContext, AgentOutput } from '../types';
 import type { BasePrompt } from '../prompts/base';
 import type { BaseMessage } from '@langchain/core/messages';
-import { createLogger } from '@src/background/log';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 import type { Action } from '../actions/builder';
 import { convertInputMessages, extractJsonFromModelOutput, removeThinkTags } from '../messages/utils';
 import { isAbortedError, RequestCancelledError } from './errors';

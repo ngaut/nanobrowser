@@ -1,9 +1,9 @@
 import { BaseAgent, type BaseAgentOptions, type ExtraAgentOptions } from './base';
-import { createLogger } from '@src/background/log';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 import { z } from 'zod';
 import { ActionResult, type AgentOutput } from '../types';
 import { Actors, ExecutionState } from '../event/types';
-import { HumanMessage, AIMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import {
   ChatModelAuthError,
   ChatModelForbiddenError,
@@ -13,6 +13,7 @@ import {
   LLM_FORBIDDEN_ERROR_MESSAGE,
   RequestCancelledError,
 } from './errors';
+
 const logger = createLogger('ValidatorAgent');
 
 // Define Zod schema for validator output

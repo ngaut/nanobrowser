@@ -1,5 +1,5 @@
 import type { AgentEvent, EventType, EventCallback } from './types';
-import { createLogger } from '../../log';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 
 const logger = createLogger('event-manager');
 

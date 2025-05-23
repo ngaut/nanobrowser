@@ -10,6 +10,10 @@ export interface GeneralSettingsConfig {
   useVision: boolean;
   useVisionForPlanner: boolean;
   planningInterval: number;
+  // Smart check-in settings
+  enableUserCheckIns: boolean;
+  checkInAfterSteps: number; // Check if user wants to provide feedback after N steps
+  checkInTimeoutSeconds: number; // How long to wait for user response before continuing
 }
 
 export type GeneralSettingsStorage = BaseStorage<GeneralSettingsConfig> & {
@@ -26,6 +30,9 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsConfig = {
   useVision: false,
   useVisionForPlanner: false,
   planningInterval: 3,
+  enableUserCheckIns: false,
+  checkInAfterSteps: 5,
+  checkInTimeoutSeconds: 10,
 };
 
 const storage = createStorage<GeneralSettingsConfig>('general-settings', DEFAULT_GENERAL_SETTINGS, {

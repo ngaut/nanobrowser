@@ -19,6 +19,17 @@ export default defineConfig({
     conditions: ['browser', 'module', 'import', 'default'],
     mainFields: ['browser', 'module', 'main']
   },
+  define: {
+    // Ensure Node.js globals don't leak into browser code
+    global: 'globalThis',
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+    // Fix for process global
+    'process.env': JSON.stringify({}),
+    'process.platform': JSON.stringify('browser'),
+    'process.version': JSON.stringify(''),
+    // Map crypto to Web Crypto API for Chrome extensions
+    crypto: 'globalThis.crypto',
+  },
   server: {
     // Restrict CORS to only allow localhost
     cors: {
@@ -53,8 +64,18 @@ export default defineConfig({
     rollupOptions: {
       external: [
         'chrome',
-        // 'chromium-bidi/lib/cjs/bidiMapper/BidiMapper.js'
+        // All Node.js modules should be external for Chrome extensions
+        'crypto', 'fs', 'path', 'os', 'url', 'util',
+        'stream', 'events', 'buffer', 'process'
+        // Note: Removing chromium-bidi since it's needed by puppeteer-core
       ],
+      output: {
+        globals: {
+          chrome: 'chrome',
+          crypto: 'globalThis.crypto'
+          // Note: Node.js modules should not have globals in Chrome extensions
+        }
+      }
     },
   },
 

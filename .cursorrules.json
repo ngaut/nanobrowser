@@ -1,0 +1,47 @@
+{
+  "rules": [
+    {
+      "id": "prefer-const",
+      "message": "Prefer 'const' over 'let' if the variable is not reassigned.",
+      "severity": "info"
+    },
+    {
+      "id": "no-explicit-any",
+      "message": "Avoid using 'any' as a type. Specify a more precise type or use 'unknown'.",
+      "severity": "warning"
+    },
+    {
+      "id": "explicit-function-return-type",
+      "message": "Explicitly define function return types for better clarity and type safety.",
+      "severity": "info"
+    },
+    {
+      "id": "no-unused-vars",
+      "message": "Remove unused variables, functions, and imports to keep the codebase clean.",
+      "severity": "warning",
+      "suggestion": "Consider enabling the 'noUnusedLocals' and 'noUnusedParameters' compiler options in tsconfig.json for stricter checks."
+    },
+    {
+      "id": "import-path-alias",
+      "message": "When path aliases (e.g., @/components, @extension/storage) are configured in tsconfig.json, prefer using them over relative paths for better readability and maintainability, especially for imports reaching outside the current package.",
+      "severity": "info"
+    },
+    {
+      "id": "no-console-log",
+      "message": "Avoid using console.log for debugging. Use the provided logger (e.g., createLogger from '@src/background/log') instead for consistent and manageable logging.",
+      "severity": "info",
+      "include_pattern": ["**/*.ts", "**/*.tsx"],
+      "exclude_pattern": ["**/node_modules/**", "**/dist/**"]
+    },
+    {
+      "id": "async-await-consistent-usage",
+      "message": "Use async/await consistently for asynchronous operations instead of mixing with .then()/.catch() for better readability, unless .then() is specifically needed for non-blocking sequences after an await.",
+      "severity": "info"
+    },
+    {
+      "id": "strict-equality-operators",
+      "message": "Prefer using strict equality operators (=== and !==) over abstract equality operators (== and !=) to avoid type coercion issues.",
+      "severity": "warning"
+    }
+  ]
+}

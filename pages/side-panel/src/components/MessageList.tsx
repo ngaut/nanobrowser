@@ -20,20 +20,24 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
 
         // Determine if this message should be treated as an AgentEvent display
         const isAgentEventDisplay =
-          message.type === EventType.EXECUTION && message.data && message.state && message.actor;
+          message.data &&
+          message.state &&
+          message.actor &&
+          (message.type === EventType.EXECUTION || message.type === EventType.PLAN_PROPOSED_TO_USER);
 
         let eventToDisplay: AgentEvent | null = null;
-        if (isAgentEventDisplay) {
+        if (isAgentEventDisplay && message.data && message.state && message.actor && message.type) {
           if (message instanceof AgentEvent) {
             eventToDisplay = message;
-          } else if (message.data && message.state) {
-            // Reconstruct AgentEvent if it's a plain object (e.g., from storage)
+          } else {
+            // Reconstruct AgentEvent if it's a plain object (e.g., from storage or port message)
+            // Ensure data.output is populated from data.detailsObject if necessary (already done in SidePanel.tsx for port messages)
             eventToDisplay = new AgentEvent(
-              message.actor,
-              message.state,
-              message.data, // data is already EnhancedEventData
+              message.actor, // Actor is confirmed by isAgentEventDisplay
+              message.state, // State is confirmed
+              message.data, // data is EnhancedEventData (or has .output mapped)
               message.timestamp,
-              message.type as EventType, // Ensure type is correctly cast if needed
+              message.type as EventType, // Cast string to EventType
             );
           }
         }
@@ -70,9 +74,10 @@ interface MessageBlockProps {
 
 function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlockProps) {
   if (!message.actor) {
-    console.error('No actor found');
+    console.error('[MessageList] No actor found for message:', { message, isSameActor });
     return <div />;
   }
+
   const actor = ACTOR_PROFILES[message.actor as keyof typeof ACTOR_PROFILES];
   const isProgress = message.content === 'Showing progress...';
 

@@ -472,7 +472,7 @@ window.buildDomTree = (
 
       try {
         return (
-          isInViewport &&
+          isAnyRectInViewport &&
           parentElement.checkVisibility({
             checkOpacity: true,
             checkVisibilityCSS: true,
@@ -481,7 +481,9 @@ window.buildDomTree = (
       } catch (e) {
         // Fallback if checkVisibility is not supported
         const style = window.getComputedStyle(parentElement);
-        return isInViewport && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        return (
+          isAnyRectInViewport && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
       }
     } catch (e) {
       console.warn('Error checking text node visibility:', e);
@@ -1080,9 +1082,11 @@ window.buildDomTree = (
       };
 
       // Process children of body
-      for (const child of node.childNodes) {
-        const domElement = buildDomTree(child, parentIframe, false); // Body's children have no highlighted parent initially
-        if (domElement) nodeData.children.push(domElement);
+      if (node.childNodes && typeof node.childNodes[Symbol.iterator] === 'function') {
+        for (const child of node.childNodes) {
+          const domElement = buildDomTree(child, parentIframe, false); // Body's children have no highlighted parent initially
+          if (domElement) nodeData.children.push(domElement);
+        }
       }
 
       const id = `${ID.current++}`;
@@ -1198,7 +1202,7 @@ window.buildDomTree = (
       if (tagName === 'iframe') {
         try {
           const iframeDoc = node.contentDocument || node.contentWindow?.document;
-          if (iframeDoc) {
+          if (iframeDoc && iframeDoc.childNodes && typeof iframeDoc.childNodes[Symbol.iterator] === 'function') {
             for (const child of iframeDoc.childNodes) {
               const domElement = buildDomTree(child, node, false);
               if (domElement) nodeData.children.push(domElement);
@@ -1217,25 +1221,31 @@ window.buildDomTree = (
         (tagName === 'body' && node.getAttribute('data-id')?.startsWith('mce_'))
       ) {
         // Process all child nodes to capture formatted text
-        for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
-          if (domElement) nodeData.children.push(domElement);
+        if (node.childNodes && typeof node.childNodes[Symbol.iterator] === 'function') {
+          for (const child of node.childNodes) {
+            const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
+            if (domElement) nodeData.children.push(domElement);
+          }
         }
       } else {
         // Handle shadow DOM
         if (node.shadowRoot) {
           nodeData.shadowRoot = true;
-          for (const child of node.shadowRoot.childNodes) {
-            const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
-            if (domElement) nodeData.children.push(domElement);
+          if (node.shadowRoot.childNodes && typeof node.shadowRoot.childNodes[Symbol.iterator] === 'function') {
+            for (const child of node.shadowRoot.childNodes) {
+              const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
+              if (domElement) nodeData.children.push(domElement);
+            }
           }
         }
         // Handle regular elements
-        for (const child of node.childNodes) {
-          // Pass the highlighted status of the *current* node to its children
-          const passHighlightStatusToChild = nodeWasHighlighted || isParentHighlighted;
-          const domElement = buildDomTree(child, parentIframe, passHighlightStatusToChild);
-          if (domElement) nodeData.children.push(domElement);
+        if (node.childNodes && typeof node.childNodes[Symbol.iterator] === 'function') {
+          for (const child of node.childNodes) {
+            // Pass the highlighted status of the *current* node to its children
+            const passHighlightStatusToChild = nodeWasHighlighted || isParentHighlighted;
+            const domElement = buildDomTree(child, parentIframe, passHighlightStatusToChild);
+            if (domElement) nodeData.children.push(domElement);
+          }
         }
       }
     }
@@ -1270,54 +1280,64 @@ window.buildDomTree = (
   // Only process metrics in debug mode
   if (debugMode && PERF_METRICS) {
     // Convert timings to seconds and add useful derived metrics
-    Object.keys(PERF_METRICS.timings).forEach(key => {
-      PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
-    });
+    if (PERF_METRICS.timings && typeof PERF_METRICS.timings === 'object') {
+      Object.keys(PERF_METRICS.timings).forEach(key => {
+        PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
+      });
+    }
 
-    Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
-      if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
-        PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
-      }
-    });
+    if (PERF_METRICS.buildDomTreeBreakdown && typeof PERF_METRICS.buildDomTreeBreakdown === 'object') {
+      Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
+        if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
+          PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+        }
+      });
+    }
 
     // Add some useful derived metrics
-    if (PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls > 0) {
+    if (PERF_METRICS.buildDomTreeBreakdown && PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls > 0) {
       PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode =
         PERF_METRICS.buildDomTreeBreakdown.totalTime / PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls;
     }
 
-    PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls =
-      PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
+    if (PERF_METRICS.buildDomTreeBreakdown) {
+      PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls =
+        PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
+    }
 
     // Add average time per operation to the metrics
-    Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
-      const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
-      const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
-      if (count > 0) {
-        PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
-      }
-    });
+    if (PERF_METRICS.buildDomTreeBreakdown && PERF_METRICS.buildDomTreeBreakdown.domOperations) {
+      Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
+        const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
+        const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
+        if (count > 0) {
+          PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+        }
+      });
+    }
 
     // Calculate cache hit rates
-    const boundingRectTotal =
-      PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.boundingRectCacheMisses;
-    const computedStyleTotal =
-      PERF_METRICS.cacheMetrics.computedStyleCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheMisses;
+    if (PERF_METRICS.cacheMetrics) {
+      const boundingRectTotal =
+        PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.boundingRectCacheMisses;
+      const computedStyleTotal =
+        PERF_METRICS.cacheMetrics.computedStyleCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheMisses;
 
-    if (boundingRectTotal > 0) {
-      PERF_METRICS.cacheMetrics.boundingRectHitRate =
-        PERF_METRICS.cacheMetrics.boundingRectCacheHits / boundingRectTotal;
-    }
+      if (boundingRectTotal > 0) {
+        PERF_METRICS.cacheMetrics.boundingRectHitRate =
+          PERF_METRICS.cacheMetrics.boundingRectCacheHits / boundingRectTotal;
+      }
 
-    if (computedStyleTotal > 0) {
-      PERF_METRICS.cacheMetrics.computedStyleHitRate =
-        PERF_METRICS.cacheMetrics.computedStyleCacheHits / computedStyleTotal;
-    }
+      if (computedStyleTotal > 0) {
+        PERF_METRICS.cacheMetrics.computedStyleHitRate =
+          PERF_METRICS.cacheMetrics.computedStyleCacheHits / computedStyleTotal;
+      }
 
-    if (boundingRectTotal + computedStyleTotal > 0) {
-      PERF_METRICS.cacheMetrics.overallHitRate =
-        (PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheHits) /
-        (boundingRectTotal + computedStyleTotal);
+      if (boundingRectTotal + computedStyleTotal > 0) {
+        PERF_METRICS.cacheMetrics.overallHitRate =
+          (PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheHits) /
+          (boundingRectTotal + computedStyleTotal);
+      }
     }
   }
 

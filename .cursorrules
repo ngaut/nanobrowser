@@ -1,0 +1,72 @@
+{
+  "rules": [
+    {
+      "id": "prefer-const",
+      "message": "Prefer 'const' over 'let' if the variable is not reassigned.",
+      "severity": "info"
+    },
+    {
+      "id": "no-explicit-any",
+      "message": "Avoid using 'any' as a type. Specify a more precise type or use 'unknown'.",
+      "severity": "warning"
+    },
+    {
+      "id": "explicit-function-return-type",
+      "message": "Explicitly define function return types for better clarity and type safety.",
+      "severity": "info"
+    },
+    {
+      "id": "no-unused-vars",
+      "message": "Remove unused variables, functions, and imports to keep the codebase clean.",
+      "severity": "warning",
+      "suggestion": "Consider enabling the 'noUnusedLocals' and 'noUnusedParameters' compiler options in tsconfig.json for stricter checks."
+    },
+    {
+      "id": "import-path-alias",
+      "message": "When path aliases (e.g., @/components, @extension/storage, @src/infrastructure) are configured in tsconfig.json, prefer using them over relative paths for better readability and maintainability, especially for imports reaching outside the current package.",
+      "severity": "info"
+    },
+    {
+      "id": "use-infrastructure-modules",
+      "message": "Use infrastructure modules from @src/infrastructure instead of legacy implementations. Example: Use @src/infrastructure/agent/agent-service instead of direct executor creation.",
+      "severity": "info",
+      "suggestion": "Leverage the modern agent pipeline, DOM processors, action factories, and browser managers for better maintainability."
+    },
+    {
+      "id": "structured-logging",
+      "message": "Use structured logging from @src/infrastructure/monitoring/logger instead of console.log/console.error. Create a logger with createLogger('ComponentName') and use logger.info(), logger.error(), etc.",
+      "severity": "warning",
+      "suggestion": "Structured logging provides better debugging with context information and is configurable for different environments."
+    },
+    {
+      "id": "single-responsibility",
+      "message": "Keep files focused on a single responsibility. Files larger than 300 lines should be considered for splitting into smaller, more focused modules.",
+      "severity": "info",
+      "suggestion": "Use the factory pattern and dependency injection to create composable components."
+    },
+    {
+      "id": "error-handling",
+      "message": "Use structured error handling with NanobrowserError and its subclasses from @src/shared/types/errors instead of generic Error objects.",
+      "severity": "info",
+      "suggestion": "Proper error typing helps with debugging and recovery strategies."
+    },
+    {
+      "id": "configuration-management",
+      "message": "Use centralized configuration from @src/shared/config instead of hardcoded values or scattered configuration objects.",
+      "severity": "info",
+      "suggestion": "Centralized configuration makes the application more maintainable and environment-aware."
+    },
+    {
+      "id": "factory-pattern",
+      "message": "Use factory classes for creating complex objects like agents, actions, or DOM processors. This enables better dependency injection and testing.",
+      "severity": "info",
+      "suggestion": "Examples: AgentFactory, ActionFactory, DOMService static methods."
+    },
+    {
+      "id": "avoid-circular-dependencies",
+      "message": "Avoid circular dependencies by using dependency injection, dynamic imports, or reorganizing module structure.",
+      "severity": "warning",
+      "suggestion": "If you need to import types only, use 'import type' instead of regular imports."
+    }
+  ]
+} 

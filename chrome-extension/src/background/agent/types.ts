@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type BrowserContext from '../browser/context';
 import type MessageManager from './messages/service';
 import type { EventManager } from './event/manager';
-import { type Actors, type ExecutionState, AgentEvent, type EventData } from './event/types';
+import { type Actors, type ExecutionState, AgentEvent, type EventData, EventType } from './event/types';
+import { ValidationError } from '@src/shared/types/errors';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
+
+const logger = createLogger('AgentTypes');
 
 export interface AgentOptions {
   maxSteps: number;
@@ -17,6 +21,10 @@ export interface AgentOptions {
   validateOutput: boolean;
   includeAttributes: string[];
   planningInterval: number;
+  // Smart check-in settings
+  enableUserCheckIns: boolean;
+  checkInAfterSteps: number;
+  checkInTimeoutSeconds: number;
 }
 
 export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
@@ -45,6 +53,9 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
     'data-date-format',
   ],
   planningInterval: 3,
+  enableUserCheckIns: false,
+  checkInAfterSteps: 0,
+  checkInTimeoutSeconds: 0,
 };
 
 export class AgentContext {
@@ -62,6 +73,11 @@ export class AgentContext {
   stepInfo: AgentStepInfo | null;
   actionResults: ActionResult[];
   stateMessageAdded: boolean;
+  planAwaitingUserResponse: boolean;
+  pendingPlan: PlannerOutput | null;
+  currentWebTask: boolean | undefined;
+  currentTaskIsDone: boolean;
+
   constructor(
     taskId: string,
     browserContext: BrowserContext,
@@ -84,14 +100,18 @@ export class AgentContext {
     this.stepInfo = null;
     this.actionResults = [];
     this.stateMessageAdded = false;
+    this.planAwaitingUserResponse = false;
+    this.pendingPlan = null;
+    this.currentWebTask = undefined;
+    this.currentTaskIsDone = false;
   }
 
   async emitEvent(
     actor: Actors,
     state: ExecutionState,
     eventDetails: string,
+    eventType?: EventType,
     detailsObject?: Record<string, unknown>,
-    output?: unknown,
   ) {
     const eventData: EventData = {
       taskId: this.taskId,
@@ -101,10 +121,10 @@ export class AgentContext {
       detailsObject,
     };
     // Conditionally add output to the event data if it's provided
-    if (output !== undefined) {
-      (eventData as any).output = output;
+    if (detailsObject !== undefined) {
+      (eventData as any).output = detailsObject;
     }
-    const event = new AgentEvent(actor, state, eventData);
+    const event = new AgentEvent(actor, state, eventData, Date.now(), eventType);
     await this.eventManager.emit(event);
   }
 
@@ -181,3 +201,46 @@ export interface AgentOutput<T = unknown> {
    */
   error?: string;
 }
+
+// Planner output schema and types
+export const plannerOutputSchema = z.object({
+  understanding: z.string().default(''),
+  observation: z.string().default(''),
+  challenges: z.string().default(''),
+  done: z.union([
+    z.boolean(),
+    z.string().transform(val => {
+      if (val.toLowerCase() === 'true') return true;
+      if (val.toLowerCase() === 'false') return false;
+      throw new ValidationError('Invalid boolean string');
+    }),
+  ]),
+  clarification_questions: z.union([z.string(), z.array(z.string())]).default(''),
+  detailed_steps: z.union([z.string(), z.array(z.string())]).default(''),
+  reasoning: z.string().default(''),
+  web_task: z.union([
+    z.boolean(),
+    z.string().transform(val => {
+      if (val.toLowerCase() === 'true') return true;
+      if (val.toLowerCase() === 'false') return false;
+      throw new ValidationError('Invalid boolean string');
+    }),
+  ]),
+  answer: z.string().default(''),
+});
+
+export type PlannerOutput = z.infer<typeof plannerOutputSchema>;
+
+export interface PlannerWaitingUserResponse {
+  status: 'awaiting_user_plan_response';
+  planProposed: PlannerOutput;
+}
+
+// Schema for interpreting user responses to plan proposals
+export const userResponseInterpretationSchema = z.object({
+  intent: z.enum(['confirmed', 'rejected', 'clarification', 'modification']),
+  reasoning: z.string(),
+  action: z.enum(['proceed', 'stop', 'incorporate_feedback', 'ask_for_explicit_confirmation']),
+});
+
+export type UserResponseInterpretation = z.infer<typeof userResponseInterpretationSchema>;

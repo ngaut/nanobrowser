@@ -314,5 +314,22 @@ Made with ❤️ by the Nanobrowser Team.
 
 Like Nanobrowser? Give us a star 🌟 and join us in [Discord](https://discord.gg/NN3ABHggMK) | [X](https://x.com/nanobrowser_ai)
 
+# Analyze project structure
+pnpm dev:tools analyze
+
+# Check maintainability issues  
+pnpm dev:tools check
+
+# Generate documentation
+pnpm dev:tools docs
+
+# Run all tools
+pnpm dev:tools all
+
+# Enhanced build commands
+pnpm build:debug    # Development build
+pnpm build:prod     # Production build
+pnpm validate       # Type check + lint + test
+
 
 

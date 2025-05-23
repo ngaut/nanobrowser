@@ -41,6 +41,18 @@ const storage = createStorage<LLMKeyRecord>(
   },
 );
 
+// Simple error class for configuration issues
+class ConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigurationError';
+  }
+}
+
+const logger = {
+  error: (message: string, error?: unknown) => console.error(`[LLMProviders] ${message}`, error),
+};
+
 // Helper function to determine provider type from provider name
 // Make sure to update this function if you add a new provider type
 export function getProviderTypeByProviderId(providerId: string): ProviderTypeEnum {
@@ -216,19 +228,17 @@ export async function fetchOllamaModels(baseUrl: string): Promise<string[]> {
     });
 
     if (!response.ok) {
-      console.error(`Error fetching Ollama models: ${response.status} ${response.statusText}`);
-      return [];
+      const errorMsg = `Error fetching Ollama models: ${response.status} ${response.statusText}`;
+      logger.error(errorMsg);
+      throw new ConfigurationError(errorMsg);
     }
 
     const data = await response.json();
-    if (data.models && Array.isArray(data.models)) {
-      return data.models.map((model: any) => model.name);
-    }
-
-    return [];
+    return data.models && Array.isArray(data.models) ? data.models.map((model: any) => model.name) : [];
   } catch (error) {
-    console.error('Error fetching Ollama models:', error);
-    return [];
+    const errorMsg = 'Error fetching Ollama models';
+    logger.error(errorMsg, error);
+    throw new ConfigurationError(`${errorMsg}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -236,31 +246,31 @@ export const llmProviderStore: LLMProviderStorage = {
   ...storage,
   async setProvider(providerId: string, config: ProviderConfig) {
     if (!providerId) {
-      throw new Error('Provider id cannot be empty');
+      throw new ConfigurationError('Provider id cannot be empty');
     }
 
     if (config.apiKey === undefined) {
-      throw new Error('API key must be provided (can be empty for local models)');
+      throw new ConfigurationError('API key must be provided (can be empty for local models)');
     }
 
     const providerType = config.type || getProviderTypeByProviderId(providerId);
 
     if (providerType === ProviderTypeEnum.AzureOpenAI) {
       if (!config.baseUrl?.trim()) {
-        throw new Error('Azure Endpoint (baseUrl) is required');
+        throw new ConfigurationError('Azure Endpoint (baseUrl) is required');
       }
       if (!config.azureDeploymentNames || config.azureDeploymentNames.length === 0) {
-        throw new Error('At least one Azure Deployment Name is required');
+        throw new ConfigurationError('At least one Azure Deployment Name is required');
       }
       if (!config.azureApiVersion?.trim()) {
-        throw new Error('Azure API Version is required');
+        throw new ConfigurationError('Azure API Version is required');
       }
       if (!config.apiKey?.trim()) {
-        throw new Error('API Key is required for Azure OpenAI');
+        throw new ConfigurationError('API Key is required for Azure OpenAI');
       }
     } else if (providerType !== ProviderTypeEnum.CustomOpenAI && providerType !== ProviderTypeEnum.Ollama) {
       if (!config.apiKey?.trim()) {
-        throw new Error(`API Key is required for ${getDefaultDisplayNameFromProviderId(providerId)}`);
+        throw new ConfigurationError(`API Key is required for ${getDefaultDisplayNameFromProviderId(providerId)}`);
       }
     }
 
@@ -324,3 +334,31 @@ export const llmProviderStore: LLMProviderStorage = {
     return providers;
   },
 };
+
+export function validateProviderConfig(providerId: string, config: ProviderConfig): void {
+  if (!providerId || providerId.trim() === '') {
+    throw new ConfigurationError('Provider id cannot be empty');
+  }
+
+  if (config.apiKey === undefined) {
+    throw new ConfigurationError('API key must be provided (can be empty for local models)');
+  }
+
+  // Azure-specific validation
+  if (providerId === 'azure-openai') {
+    if (!config.baseUrl || config.baseUrl.trim() === '') {
+      throw new ConfigurationError('Azure Endpoint (baseUrl) is required');
+    }
+    if (!config.azureDeploymentNames || config.azureDeploymentNames.length === 0) {
+      throw new ConfigurationError('At least one Azure Deployment Name is required');
+    }
+    if (!config.azureApiVersion || config.azureApiVersion.trim() === '') {
+      throw new ConfigurationError('Azure API Version is required');
+    }
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      throw new ConfigurationError('API Key is required for Azure OpenAI');
+    }
+  } else if (providerId !== 'ollama' && (!config.apiKey || config.apiKey.trim() === '')) {
+    throw new ConfigurationError(`API Key is required for ${getDefaultDisplayNameFromProviderId(providerId)}`);
+  }
+}

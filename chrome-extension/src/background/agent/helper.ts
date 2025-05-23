@@ -6,8 +6,11 @@ import { ChatXAI } from '@langchain/xai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatOllama } from '@langchain/ollama';
 import { ChatDeepSeek } from '@langchain/deepseek';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 
 const maxTokens = 1024 * 4;
+
+const logger = createLogger('AgentHelper');
 
 function isOpenAIOModel(modelName: string): boolean {
   if (modelName.startsWith('openai/')) {
@@ -81,7 +84,7 @@ function extractInstanceNameFromUrl(url: string): string | null {
       return hostnameParts[0];
     }
   } catch (e) {
-    console.error('Error parsing Azure endpoint URL:', e);
+    logger.error('Error parsing Azure endpoint URL', e as Error);
   }
   return null;
 }
@@ -115,8 +118,8 @@ function createAzureChatModel(providerConfig: ProviderConfig, modelConfig: Model
 
   // Validate that the selected model exists in the configured deployments
   if (!providerConfig.azureDeploymentNames.includes(deploymentName)) {
-    console.warn(
-      `[createChatModel] Selected deployment "${deploymentName}" not found in available deployments. ` +
+    logger.warn(
+      `Selected deployment "${deploymentName}" not found in available deployments. ` +
         `Available: ${JSON.stringify(providerConfig.azureDeploymentNames)}. Using the model anyway.`,
     );
   }
@@ -156,7 +159,6 @@ function createAzureChatModel(providerConfig: ProviderConfig, modelConfig: Model
         }),
     // DO NOT pass baseUrl or configuration here
   };
-  // console.log('[createChatModel] Azure args passed to AzureChatOpenAI:', args);
   return new AzureChatOpenAI(args);
 }
 
@@ -249,7 +251,7 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
     }
     case ProviderTypeEnum.OpenRouter: {
       // Call the helper function, passing OpenRouter headers via the third argument
-      console.log('[createChatModel] Calling createOpenAIChatModel for OpenRouter');
+      logger.debug('Calling createOpenAIChatModel for OpenRouter');
       return createOpenAIChatModel(providerConfig, modelConfig, {
         headers: {
           'HTTP-Referer': 'https://nanobrowser.ai',

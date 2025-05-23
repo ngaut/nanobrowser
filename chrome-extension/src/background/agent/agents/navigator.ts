@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BaseAgent, type BaseAgentOptions, type ExtraAgentOptions } from './base';
-import { createLogger } from '@src/background/log';
+import { createLogger } from '@src/infrastructure/monitoring/logger';
 import { ActionResult, type AgentOutput } from '../types';
 import type { Action } from '../actions/builder';
 import { buildDynamicActionSchema } from '../actions/builder';
@@ -18,7 +18,7 @@ import {
 } from './errors';
 import { jsonNavigatorOutputSchema } from '../actions/json_schema';
 import { geminiNavigatorOutputSchema } from '../actions/json_gemini';
-import { calcBranchPathHashSet } from '@src/background/dom/views';
+import { DOMTreeProcessor } from '@src/infrastructure/dom/tree-processor';
 import { URLNotAllowedError } from '@src/background/browser/views';
 const logger = createLogger('NavigatorAgent');
 
@@ -344,7 +344,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
     const browserContext = this.context.browserContext;
     const browserState = await browserContext.getState(this.context.options.useVision);
-    const cachedPathHashes = await calcBranchPathHashSet(browserState);
+    const cachedPathHashes = await DOMTreeProcessor.calcBranchPathHashSet(browserState);
 
     await browserContext.removeHighlight();
 
@@ -365,7 +365,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         const indexArg = actionInstance.getIndexArg(actionArgs);
         if (i > 0 && indexArg !== null) {
           const newState = await browserContext.getState(this.context.options.useVision);
-          const newPathHashes = await calcBranchPathHashSet(newState);
+          const newPathHashes = await DOMTreeProcessor.calcBranchPathHashSet(newState);
           // next action requires index but there are new elements on the page
           if (!newPathHashes.isSubsetOf(cachedPathHashes)) {
             const msg = `Something new appeared after action ${i} / ${actions.length}`;

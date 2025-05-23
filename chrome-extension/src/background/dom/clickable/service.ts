@@ -1,4 +1,4 @@
-import { DOMElementNode } from '../views';
+import { DOMElementNode } from '@src/infrastructure/dom/base-node';
 
 /**
  * Get all clickable elements hashes in the DOM tree
@@ -119,12 +119,3 @@ function _hashString(string: string): string {
   // Real hashing is done in createSHA256Hash
   return string;
 }
-
-/**
- * ClickableElementProcessor namespace for backward compatibility
- */
-export const ClickableElementProcessor = {
-  getClickableElementsHashes,
-  getClickableElements,
-  hashDomElement,
-};

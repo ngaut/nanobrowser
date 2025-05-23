@@ -7,6 +7,7 @@ export enum EventType {
    * For now, only execution events are supported.
    */
   EXECUTION = 'execution',
+  PLAN_PROPOSED_TO_USER = 'plan_proposed_to_user',
 }
 
 export enum ExecutionState {
@@ -35,6 +36,7 @@ export enum ExecutionState {
   STEP_OK = 'step.ok',
   STEP_FAIL = 'step.fail',
   STEP_CANCEL = 'step.cancel',
+  WAITING_USER_CONFIRMATION = 'step.waiting_user_confirmation',
 
   // Action/Tool level states
   ACT_START = 'act.start',
