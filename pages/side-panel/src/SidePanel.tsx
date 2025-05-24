@@ -10,6 +10,7 @@ import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
 import BookmarkList from './components/BookmarkList';
+import TaskSummaryCard from './components/TaskSummaryCard';
 import { EventType, type AgentEvent, ExecutionState, EnhancedEventData } from './types/event';
 import './SidePanel.css';
 
@@ -73,10 +74,13 @@ const SidePanel = () => {
 
   const handleTaskState = useCallback(
     (event: AgentEvent) => {
+      console.log('🎯 handleTaskState called with event:', event);
       const { actor, state, timestamp, data, type: eventType } = event;
       const content = data?.details;
       let skip = true;
       let displayProgress = false;
+
+      console.log('🎯 Processing event:', { actor, state, eventType, content, skip, displayProgress });
 
       if (eventType === EventType.PLAN_PROPOSED_TO_USER) {
         console.log('🎯 PLAN_PROPOSED_TO_USER event received:', event);
@@ -92,6 +96,7 @@ const SidePanel = () => {
                 setIsHistoricalSession(false);
                 setInputEnabled(false);
                 setShowStopButton(true);
+                skip = false; // Show task start
                 break;
               case ExecutionState.TASK_OK:
               case ExecutionState.TASK_FAIL:
@@ -115,26 +120,24 @@ const SidePanel = () => {
           case Actors.USER:
             break;
           case Actors.PLANNER:
-            if (eventType !== EventType.PLAN_PROPOSED_TO_USER) {
-              switch (state) {
-                case ExecutionState.STEP_START:
-                  displayProgress = true;
-                  skip = false;
-                  break;
-                case ExecutionState.STEP_OK:
-                case ExecutionState.STEP_FAIL:
-                  skip = false;
-                  break;
-                case ExecutionState.STEP_CANCEL:
-                  break;
-                case ExecutionState.WAITING_USER_CONFIRMATION:
-                  // This should be handled by the PLAN_PROPOSED_TO_USER event type instead
-                  skip = false;
-                  break;
-                default:
-                  console.error('Invalid planner step state', state, event);
-                  return;
-              }
+            switch (state) {
+              case ExecutionState.STEP_START:
+                displayProgress = true;
+                skip = false;
+                break;
+              case ExecutionState.STEP_OK:
+              case ExecutionState.STEP_FAIL:
+                skip = false;
+                break;
+              case ExecutionState.STEP_CANCEL:
+                break;
+              case ExecutionState.WAITING_USER_CONFIRMATION:
+                // This should be handled by the PLAN_PROPOSED_TO_USER event type instead
+                skip = false;
+                break;
+              default:
+                console.error('Invalid planner step state', state, event);
+                return;
             }
             break;
           case Actors.NAVIGATOR:

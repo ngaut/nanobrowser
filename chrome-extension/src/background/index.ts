@@ -9,7 +9,7 @@ import {
 } from '@extension/storage';
 import BrowserContext from './browser/context';
 import { Executor } from './agent/executor';
-import type { ExecutionState } from '@src/shared/types/agent';
+import { ExecutionState } from './agent/event/types';
 import { createChatModel } from './agent/helper';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { DEFAULT_AGENT_OPTIONS } from './agent/types';
@@ -82,8 +82,16 @@ chrome.runtime.onConnect.addListener(port => {
               await currentExecutor.cancel();
             }
             currentExecutor = await setupExecutor(message.taskId as string, message.task as string, browserContext);
-            subscribeToExecutorEvents(currentExecutor);
-            await currentExecutor.execute();
+
+            // Start execution first, then subscribe to events
+            const executePromise = currentExecutor.execute();
+
+            // Subscribe to events after execution starts (small delay to ensure currentExecution is set)
+            setTimeout(() => {
+              subscribeToExecutorEvents(currentExecutor!);
+            }, 100);
+
+            await executePromise;
             logger.info('[Background] Initial execution cycle for new_task started.', message.tabId);
             break;
           }
@@ -94,8 +102,16 @@ chrome.runtime.onConnect.addListener(port => {
             if (currentExecutor) {
               logger.info('[Background] follow_up_task received:', message.tabId, message.task);
               await currentExecutor.addFollowUpTask(message.task as string);
-              subscribeToExecutorEvents(currentExecutor); // Re-subscribe might be needed if old one cleared
-              await currentExecutor.execute();
+
+              // Start execution first, then subscribe to events
+              const executePromise = currentExecutor.execute();
+
+              // Subscribe to events after execution starts (small delay to ensure currentExecution is set)
+              setTimeout(() => {
+                subscribeToExecutorEvents(currentExecutor!);
+              }, 100);
+
+              await executePromise;
               logger.info('[Background] Execution cycle for follow_up_task started.', message.tabId);
             } else {
               logger.info('[Background] follow_up_task: executor was cleaned up or not initialized. Cannot process.');
@@ -256,11 +272,32 @@ async function subscribeToExecutorEvents(executor: Executor) {
   // Clear previous event listeners to prevent multiple subscriptions
   executor.clearExecutionEvents();
 
+  logger.info('[Background] Setting up event subscription', { hasCurrentPort: !!currentPort });
+
   // Subscribe to new events
   executor.subscribeExecutionEvents(async event => {
     try {
+      logger.info('[Background] Event received for forwarding', {
+        eventType: event.type,
+        actor: event.actor,
+        state: event.state,
+        hasCurrentPort: !!currentPort,
+      });
+
       if (currentPort) {
+        logger.info('[Background] Sending event to side panel', {
+          eventType: event.type,
+          actor: event.actor,
+          state: event.state,
+        });
         currentPort.postMessage(event);
+        logger.info('[Background] Event sent successfully');
+      } else {
+        logger.warn('[Background] currentPort is null, cannot send event to side panel', {
+          eventType: event.type,
+          actor: event.actor,
+          state: event.state,
+        });
       }
     } catch (error) {
       logger.error('Failed to send message to side panel:', error);

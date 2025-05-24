@@ -36,6 +36,7 @@ export enum ExecutionState {
   TASK_PAUSE = 'task.pause',
   TASK_RESUME = 'task.resume',
   TASK_CANCEL = 'task.cancel',
+  TASK_END = 'task.end',
 
   // Step level states
   STEP_START = 'step.start',

@@ -2,6 +2,7 @@ import type { Message } from '@extension/storage';
 import { ACTOR_PROFILES } from '../types/message';
 import { memo } from 'react';
 import EventDetails from './EventDetails';
+import LiveStatusCard from './LiveStatusCard';
 import { AgentEvent } from '../types/event';
 import { EventType } from '../types/event';
 
@@ -17,6 +18,9 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
         // Debug: log message structure and detailsObject presence
         // eslint-disable-next-line no-console
         console.log('Message:', message, 'Has detailsObject:', message.data?.detailsObject);
+
+        // Check if this is a progress message
+        const isProgressMessage = message.content === 'Showing progress...';
 
         // Determine if this message should be treated as an AgentEvent display
         const isAgentEventDisplay =
@@ -46,13 +50,18 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
           <div
             key={`${message.actor}-${message.timestamp}-${index}`}
             className={`${
-              !eventToDisplay && index > 0 && messages[index - 1].actor === message.actor
+              !eventToDisplay && !isProgressMessage && index > 0 && messages[index - 1].actor === message.actor
                 ? `mt-4 border-t ${isDarkMode ? 'border-sky-800/50' : 'border-sky-200/50'} pt-4 first:mt-0 first:border-t-0 first:pt-0`
                 : ''
             }`}>
-            {eventToDisplay ? (
+            {isProgressMessage && eventToDisplay ? (
+              // Show live status card for progress messages
+              <LiveStatusCard event={eventToDisplay} isDarkMode={isDarkMode} />
+            ) : eventToDisplay ? (
+              // Show event details for completed events
               <EventDetails event={eventToDisplay} isDarkMode={isDarkMode} />
             ) : (
+              // Show regular message block
               <MessageBlock
                 message={message}
                 isSameActor={index > 0 ? messages[index - 1].actor === message.actor : false}
@@ -79,7 +88,6 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
   }
 
   const actor = ACTOR_PROFILES[message.actor as keyof typeof ACTOR_PROFILES];
-  const isProgress = message.content === 'Showing progress...';
 
   return (
     <div
@@ -106,19 +114,11 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
 
         <div className="space-y-0.5">
           <div className={`whitespace-pre-wrap break-words text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            {isProgress ? (
-              <div className={`h-1 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                <div className="animate-progress h-full bg-blue-500" />
-              </div>
-            ) : (
-              message.content
-            )}
+            {message.content}
           </div>
-          {!isProgress && (
-            <div className={`text-right text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-300'}`}>
-              {formatTimestamp(message.timestamp)}
-            </div>
-          )}
+          <div className={`text-right text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-300'}`}>
+            {formatTimestamp(message.timestamp)}
+          </div>
         </div>
       </div>
     </div>
