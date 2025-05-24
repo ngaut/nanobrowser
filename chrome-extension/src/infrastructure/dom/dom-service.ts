@@ -53,7 +53,7 @@ export class DOMService {
     debugMode = false,
   ): Promise<DOMState> {
     try {
-      const [elementTree, selectorMap] = await DOMTreeProcessor.getClickableElements(
+      const domState = await DOMTreeProcessor.getClickableElements(
         tabId,
         url,
         showHighlightElements,
@@ -62,11 +62,11 @@ export class DOMService {
         debugMode,
       );
 
-      if (!elementTree) {
+      if (!domState.elementTree) {
         throw new BrowserError('Failed to get clickable elements: No element tree returned');
       }
 
-      return { elementTree, selectorMap };
+      return domState;
     } catch (error) {
       logger.error('Failed to get clickable elements', error as Error, { tabId, url });
 
