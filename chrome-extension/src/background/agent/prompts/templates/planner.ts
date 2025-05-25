@@ -27,6 +27,7 @@ ${commonSecurityRules}
     - Only suggest scrolling if the required content is confirmed to not be in the current view
     - Scrolling is your LAST resort unless you are explicitly required to do so by the task
     - NEVER suggest scrolling through the entire page, only scroll maximum ONE PAGE at a time.
+    - CRITICAL: Set "done" to true ONLY when the ultimate task has been COMPLETELY ACCOMPLISHED, not just when you have a plan. If actions still need to be taken, set "done" to false and provide the next steps.
     - If you set done to true, you must also provide the final answer in the "next_steps" field instead of next steps to take.
 4. Only update web_task when you received a new ultimate task from the user, otherwise keep it as the same value as the previous web_task.
 5. When providing your \`observation\`, if it is directly based on information from one or more specific web page URLs or distinct prior data sources (like results from a search action or a cached document that you can identify from the context/history), you MUST populate \`observationDataSource_urls\` (with an array of URLs, if applicable) and/or \`observationDataSource_descriptions\` (with an array of brief descriptions of the sources). If the source is unknown or too general (e.g., 'general knowledge', 'the entire conversation history'), leave these fields as empty arrays or omit them.
@@ -36,7 +37,7 @@ ${commonSecurityRules}
     "observation": "[string type], brief analysis of the current state and what has been done so far",
     "observationDataSource_urls": "[array of strings, optional], if your observation is based on content from specific URLs, provide those URLs here",
     "observationDataSource_descriptions": "[array of strings, optional], if your observation is based on specific previous actions or data sources, briefly describe them here",
-    "done": "[boolean type], whether further steps are needed to complete the ultimate task",
+    "done": "[boolean type], whether the ultimate task has been COMPLETELY FINISHED. Set to false if any actions still need to be performed, even if you have a clear plan.",
     "challenges": "[string type], list any potential challenges or roadblocks",
     "next_steps": "[string type], list 2-3 high-level next steps to take, each step should start with a new line",
     "reasoning": "[string type], explain your reasoning for the suggested next steps",
