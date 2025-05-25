@@ -36,6 +36,8 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
     'name',
     'role',
     'href',
+    'id',
+    'class',
     'tabindex',
     'aria-label',
     'placeholder',

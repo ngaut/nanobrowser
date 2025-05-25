@@ -50,6 +50,8 @@ Common action sequences:
 3. ELEMENT INTERACTION:
 
 - Only use indexes of the interactive elements
+- CRITICAL: Match your element selection to your plan requirements - find the exact element your plan describes
+- Don't ignore specific details in your plan when selecting elements
 
 4. NAVIGATION & ERROR HANDLING:
 
