@@ -746,8 +746,39 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         const planMatch = msg.content.match(CONSTANTS.PLAN_TAG_REGEX);
         if (planMatch) {
           const planText = planMatch[1].trim();
-          // Let the LLM understand the plan structure instead of complex parsing
-          nextPlanStep = `Plan available: ${planText.substring(0, 200)}${planText.length > 200 ? '...' : ''}`;
+
+          // Extract plan steps from the plan text
+          try {
+            const planData = JSON.parse(planText);
+            if (planData.next_steps && typeof planData.next_steps === 'string') {
+              // Parse numbered steps from next_steps string
+              const stepsText = planData.next_steps;
+              const stepMatches = stepsText.match(/\d+\.\s*[^.]+\./g);
+              if (stepMatches) {
+                planSteps = stepMatches.map((step: string) => step.trim());
+                nextPlanStep = planSteps[0] || CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+              } else {
+                // Fallback: split by numbers if no proper format found
+                const fallbackSteps = stepsText.split(/\d+\.\s*/).filter((step: string) => step.trim().length > 0);
+                if (fallbackSteps.length > 0) {
+                  planSteps = fallbackSteps.map((step: string, index: number) => `${index + 1}. ${step.trim()}`);
+                  nextPlanStep = planSteps[0] || CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+                }
+              }
+            }
+          } catch (error) {
+            // If JSON parsing fails, try to extract steps from raw text
+            const stepMatches = planText.match(/\d+\.\s*[^.]+\./g);
+            if (stepMatches) {
+              planSteps = stepMatches.map((step: string) => step.trim());
+              nextPlanStep = planSteps[0] || CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+            }
+          }
+
+          // Fallback for nextPlanStep if no steps were extracted
+          if (nextPlanStep === CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP) {
+            nextPlanStep = `Plan available: ${planText.substring(0, 200)}${planText.length > 200 ? '...' : ''}`;
+          }
         }
         break;
       }

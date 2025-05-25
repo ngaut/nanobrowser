@@ -59,12 +59,42 @@ export default memo(function ProgressBar({
   const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false);
 
   // Calculate progress based on plan steps if available, otherwise fall back to temporal context
-  const actualCurrentStep =
-    planInfo?.hasPlan && temporalContext?.stepNumber
-      ? Math.min(temporalContext.stepNumber, planInfo.totalStepsInPlan)
-      : currentStep;
+  const actualCurrentStep = (() => {
+    if (planInfo?.hasPlan) {
+      // If we have a plan, use plan-based step calculation
+      if (planInfo.totalStepsInPlan > 0) {
+        // Plan has been created with specific steps
+        if (temporalContext?.stepNumber !== undefined) {
+          // During planning phase (step 0), show as step 1 of plan
+          // During execution, show actual step progress
+          const planStep =
+            temporalContext.stepNumber === 0 ? 1 : Math.min(temporalContext.stepNumber, planInfo.totalStepsInPlan);
+          return planStep;
+        }
+        return 1; // Default to step 1 if no temporal context
+      } else {
+        // Plan exists but totalStepsInPlan is 0 (still planning)
+        // Use the provided currentStep or default to 1
+        return Math.max(currentStep, 1);
+      }
+    }
+    // Fallback to provided currentStep or temporal context
+    return Math.max(temporalContext?.stepNumber || currentStep, 1);
+  })();
 
-  const actualTotalSteps = planInfo?.hasPlan && planInfo.totalStepsInPlan > 0 ? planInfo.totalStepsInPlan : totalSteps;
+  const actualTotalSteps = (() => {
+    if (planInfo?.hasPlan) {
+      if (planInfo.totalStepsInPlan > 0) {
+        return planInfo.totalStepsInPlan;
+      } else {
+        // Plan exists but totalStepsInPlan is 0 (still planning)
+        // Try to extract from upcomingSteps or use a reasonable default
+        const stepsFromUpcoming = planInfo.upcomingSteps?.length || 0;
+        return stepsFromUpcoming > 0 ? stepsFromUpcoming + 1 : Math.max(totalSteps, 3); // Default to at least 3 steps
+      }
+    }
+    return totalSteps;
+  })();
 
   const progressPercentage = actualTotalSteps > 0 ? Math.round((actualCurrentStep / actualTotalSteps) * 100) : 0;
 
