@@ -45,6 +45,7 @@ interface TaskInformation {
   activePlan: string;
   planSteps: string[];
   nextPlanStep: string;
+  pageElements: string; // NEW: Page elements context from Planner
 }
 
 interface EnhancedBrowserState {
@@ -255,6 +256,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           title: browserState.title || 'Unknown',
           url: browserState.url || 'Unknown',
         },
+        pageElements: taskInfo.pageElements, // NEW: Include Planner's page elements context
       };
 
       // Execute navigation logic
@@ -365,7 +367,12 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     },
     browserState: EnhancedBrowserState & { interactiveElementsCount: number },
   ): NavigatorDetails {
-    const actionAnalysis = this.analyzeCurrentAction(browserState, taskInfo.taskInstruction, taskInfo.nextPlanStep);
+    const actionAnalysis = this.analyzeCurrentAction(
+      browserState,
+      taskInfo.taskInstruction,
+      taskInfo.nextPlanStep,
+      taskInfo.pageElements,
+    );
 
     const currentPageInfo = {
       title: browserState.title || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE,
@@ -691,6 +698,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     browserState: EnhancedBrowserState & { interactiveElementsCount: number },
     taskInstruction: string,
     nextPlanStep: string,
+    pageElements?: string,
   ): string {
     try {
       const pageTitle = browserState.title || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE;
@@ -727,6 +735,11 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         analysis += `📋 Next planned action: ${nextPlanStep}`;
       }
 
+      // NEW: Include Planner's page elements context if available
+      if (pageElements && pageElements.trim().length > 0) {
+        analysis += `\n🎯 Planner's element context: ${pageElements}`;
+      }
+
       return analysis;
     } catch (error) {
       return CONSTANTS.DEFAULT_MESSAGES.ANALYSIS_ERROR;
@@ -746,6 +759,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let activePlan: string = CONSTANTS.DEFAULT_MESSAGES.PLAN_NOT_FOUND;
     let planSteps: string[] = [];
     let nextPlanStep: string = CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+    let pageElements: string = ''; // NEW: Page elements from Planner
     let planCreatedAtStep: number = 0;
     let planMessageIndex: number = -1;
 
@@ -796,6 +810,10 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
                 }
               }
             }
+            // NEW: Extract page elements context from Planner
+            if (planData.page_elements && typeof planData.page_elements === 'string') {
+              pageElements = planData.page_elements;
+            }
           } catch (error) {
             // If JSON parsing fails, try to extract steps from raw text
             const stepMatches = planText.match(/\d+\.\s*[^.]+\./g);
@@ -843,6 +861,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       activePlan,
       planSteps,
       nextPlanStep,
+      pageElements,
       planCreatedAtStep,
       stepsSincePlanCreated,
       currentPlanStep,

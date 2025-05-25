@@ -73,6 +73,7 @@ export interface NavigatorContext {
     title: string;
     url: string;
   };
+  pageElements: string; // NEW: Page elements context from Planner
 }
 
 export class AgentContext {

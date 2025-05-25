@@ -37,6 +37,7 @@ export const plannerOutputSchema = z.object({
       throw new Error('Invalid boolean string');
     }),
   ]),
+  page_elements: z.string().optional(), // NEW: Page elements context for Navigator
   observationDataSource_urls: z.array(z.string().url()).optional(),
   observationDataSource_descriptions: z.array(z.string()).optional(),
 });
