@@ -72,8 +72,12 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
       {isNavigatorEvent && temporalContext && (
         <div className="mb-3">
           <ProgressBar
-            currentStep={temporalContext.stepNumber || 1}
-            totalSteps={planInfo?.totalStepsInPlan || temporalContext.maxSteps}
+            currentStep={
+              planInfo?.hasPlan
+                ? Math.min(temporalContext.stepNumber || 1, planInfo.totalStepsInPlan)
+                : temporalContext.stepNumber || 1
+            }
+            totalSteps={planInfo?.hasPlan ? planInfo.totalStepsInPlan : temporalContext.maxSteps}
             currentPage={{
               title: currentPage?.title || 'Unknown Page',
               url: currentPage?.url || '',
@@ -93,8 +97,12 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
       {isNavigatorEvent && !temporalContext && navigatorDetails && (
         <div className="mb-3">
           <ProgressBar
-            currentStep={navigatorDetails.step || 1}
-            totalSteps={planInfo?.totalStepsInPlan || 50}
+            currentStep={
+              planInfo?.hasPlan
+                ? Math.min(navigatorDetails.step || 1, planInfo.totalStepsInPlan)
+                : navigatorDetails.step || 1
+            }
+            totalSteps={planInfo?.hasPlan ? planInfo.totalStepsInPlan : 50}
             currentPage={{
               title: currentPage?.title || 'Unknown Page',
               url: currentPage?.url || '',

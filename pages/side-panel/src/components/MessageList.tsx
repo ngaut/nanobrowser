@@ -114,8 +114,12 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
               // Use new ProgressBar if we have plan information, otherwise fall back to simple animation
               temporalContext ? (
                 <ProgressBar
-                  currentStep={temporalContext.stepNumber || 1}
-                  totalSteps={planInfo?.totalStepsInPlan || temporalContext.maxSteps}
+                  currentStep={
+                    planInfo?.hasPlan
+                      ? Math.min(temporalContext.stepNumber || 1, planInfo.totalStepsInPlan)
+                      : temporalContext.stepNumber || 1
+                  }
+                  totalSteps={planInfo?.hasPlan ? planInfo.totalStepsInPlan : temporalContext.maxSteps}
                   currentPage={{
                     title: currentPage?.title || 'Unknown Page',
                     url: currentPage?.url || '',
@@ -131,8 +135,12 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
               ) : progressData && (currentPage || planInfo) ? (
                 // Fallback: Use ProgressBar even without temporalContext if we have some progress data
                 <ProgressBar
-                  currentStep={progressData.step || 1}
-                  totalSteps={planInfo?.totalStepsInPlan || 50}
+                  currentStep={
+                    planInfo?.hasPlan
+                      ? Math.min(progressData.step || 1, planInfo.totalStepsInPlan)
+                      : progressData.step || 1
+                  }
+                  totalSteps={planInfo?.hasPlan ? planInfo.totalStepsInPlan : 50}
                   currentPage={{
                     title: currentPage?.title || 'Unknown Page',
                     url: currentPage?.url || '',

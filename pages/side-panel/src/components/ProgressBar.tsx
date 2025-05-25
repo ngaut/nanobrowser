@@ -57,7 +57,15 @@ export default memo(function ProgressBar({
 }: ProgressBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const progressPercentage = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+  // Calculate progress based on plan steps if available, otherwise fall back to temporal context
+  const actualCurrentStep =
+    planInfo?.hasPlan && temporalContext?.stepNumber
+      ? Math.min(temporalContext.stepNumber, planInfo.totalStepsInPlan)
+      : currentStep;
+
+  const actualTotalSteps = planInfo?.hasPlan && planInfo.totalStepsInPlan > 0 ? planInfo.totalStepsInPlan : totalSteps;
+
+  const progressPercentage = actualTotalSteps > 0 ? Math.round((actualCurrentStep / actualTotalSteps) * 100) : 0;
 
   // Truncate long titles and URLs for display
   const truncateText = (text: string, maxLength: number) => {
@@ -104,7 +112,10 @@ export default memo(function ProgressBar({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <div className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
-              Step {currentStep} of {totalSteps}
+              Step {actualCurrentStep} of {actualTotalSteps}
+              {planInfo?.hasPlan && (
+                <span className={`ml-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>(plan)</span>
+              )}
             </div>
             <div
               className={`text-xs px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-800'}`}>
@@ -249,15 +260,27 @@ export default memo(function ProgressBar({
               </h4>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Progress: {temporalContext.stepNumber}/{temporalContext.maxSteps}
+                  Progress: {actualCurrentStep}/{actualTotalSteps}
+                  {planInfo?.hasPlan && <span className="text-green-500"> (plan)</span>}
                 </div>
                 <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Runtime: {getExecutionTime()}</div>
                 <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                   Planning interval: {temporalContext.planningInterval} steps
                 </div>
                 <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Completion: {temporalContext.progressPercentage}%
+                  Completion: {progressPercentage}%
+                  {planInfo?.hasPlan && <span className="text-green-500"> (plan)</span>}
                 </div>
+                {!planInfo?.hasPlan && (
+                  <>
+                    <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      System steps: {temporalContext.stepNumber}/{temporalContext.maxSteps}
+                    </div>
+                    <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      System progress: {Math.round((temporalContext.stepNumber / temporalContext.maxSteps) * 100)}%
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
