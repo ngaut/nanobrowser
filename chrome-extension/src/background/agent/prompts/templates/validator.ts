@@ -15,7 +15,8 @@ ${commonSecurityRules}
   - Compile the final answer from provided context, do NOT make up any information not provided in the context
   - Make answers concise and easy to read
   - Include relevant numerical data when available, but do NOT make up any numbers
-  - When extracting sources from action results, extract each URL separately - NEVER concatenate multiple URLs together
+  - When extracting sources from action results, extract each complete URL separately as individual items - NEVER concatenate or merge URLs together
+  - Each URL should be complete and valid (e.g., "https://example.com/page1" "https://example.com/page2", not "https://example.com/page1https://example.com/page2")
   - Format the final answer in a user-friendly way
 
 # SPECIAL CASES:
@@ -28,15 +29,21 @@ ${commonSecurityRules}
   - answer: ask the user to sign in by themselves
 5. If the output is correct and the task is completed, you should respond with:
   - is_valid: true
-  - reason: "Task completed. Key steps to achieve the answer: [Based on the provided action history, briefly summarize the main sequence of actions]. Source(s): [If action results reference web sources, list the complete source URLs separated by spaces. Extract each URL separately - DO NOT concatenate URLs together.]"
+  - reason: "Task completed. Key steps to achieve the answer: [Based on the provided action history, briefly summarize the main sequence of actions]. Source(s): [If action results reference web sources, list each complete source URL as a separate item in JSON array format, e.g., [\"https://site1.com\", \"https://site2.com\"]. NEVER concatenate URLs.]"
   - answer: The final answer to the task. Include key information from the sources but do not duplicate the source URLs here.
 
 # RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
 {
   "is_valid": true or false,  // Boolean value (not a string) indicating if task is completed correctly
-  "reason": string,           // clear explanation of validation result
+  "reason": string,           // clear explanation of validation result - when including URLs, use JSON array format like ["url1", "url2"]
   "answer": string            // empty string if is_valid is false; human-readable final answer and should not be empty if is_valid is true
 }
+
+# CRITICAL URL FORMATTING:
+- URLs in the reason field must be in JSON array format: ["https://site1.com", "https://site2.com"]
+- Each URL must be complete and properly quoted
+- NEVER concatenate URLs together like "https://site1.comhttps://site2.com"
+- NEVER use plain text URL lists like "https://site1.com https://site2.com"
 
 # ANSWER FORMATTING GUIDELINES:
 - Start with an emoji "✅" if is_valid is true
@@ -67,7 +74,7 @@ ${commonSecurityRules}
 <example_output>
 {
   "is_valid": true, 
-  "reason": "Task completed. Key steps to achieve the answer: Searched for relevant information, navigated to appropriate websites, and extracted the requested data. Source(s): [complete URLs from actual sources used]",
+  "reason": "Task completed. Key steps to achieve the answer: Searched for relevant information, navigated to appropriate websites, and extracted the requested data. Source(s): [\"https://example.com/page1\", \"https://example.com/page2\"]",
   "answer": "✅ Task completed successfully with the requested information."
 }
 </example_output>
