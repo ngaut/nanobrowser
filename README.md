@@ -41,6 +41,8 @@ Looking for a powerful AI web agent without the $200/month price tag of OpenAI O
 ## 📊 Key Features
 
 - **Multi-agent System**: Specialized AI agents collaborate to accomplish complex web workflows
+- **Human-in-the-Loop**: Provide real-time context and guidance to agents while they work
+- **Visual Progress Tracking**: Real-time progress bar with screenshot thumbnails showing current page
 - **Interactive Side Panel**: Intuitive chat interface with real-time status updates
 - **Task Automation**: Seamlessly automate repetitive web automation tasks across websites
 - **Follow-up Questions**: Ask contextual follow-up questions about completed tasks

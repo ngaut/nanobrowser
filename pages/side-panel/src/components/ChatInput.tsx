@@ -7,6 +7,7 @@ interface ChatInputProps {
   showStopButton: boolean;
   setContent?: (setter: (text: string) => void) => void;
   isDarkMode?: boolean;
+  isExecuting?: boolean;
 }
 
 export default function ChatInput({
@@ -16,6 +17,7 @@ export default function ChatInput({
   showStopButton,
   setContent,
   isDarkMode = false,
+  isExecuting = false,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const isSendButtonDisabled = useMemo(() => disabled || text.trim() === '', [disabled, text]);
@@ -94,7 +96,7 @@ export default function ChatInput({
                 ? 'bg-slate-800 text-gray-200'
                 : 'bg-white'
           }`}
-          placeholder="What can I help with?"
+          placeholder={isExecuting ? "What's the context?" : 'What can I help with?'}
           aria-label="Message input"
         />
 
@@ -102,7 +104,11 @@ export default function ChatInput({
           className={`flex items-center justify-between px-2 py-1.5 ${
             disabled ? (isDarkMode ? 'bg-slate-800' : 'bg-gray-100') : isDarkMode ? 'bg-slate-800' : 'bg-white'
           }`}>
-          <div className="flex gap-2 text-gray-500">{/* Icons can go here */}</div>
+          <div className="flex gap-2 text-gray-500">
+            {isExecuting && !disabled && (
+              <span className="text-xs text-orange-500 font-medium">💬 Providing context</span>
+            )}
+          </div>
 
           {showStopButton ? (
             <button

@@ -164,6 +164,44 @@ export default class MessageManager {
   }
 
   /**
+   * Adds user context during task execution
+   * @param context - The user-provided context or guidance
+   */
+  public addUserContext(context: string): void {
+    const content = `User guidance: ${context}`;
+    const msg = new HumanMessage({ content });
+    this.addMessageWithTokens(msg, 'user_context');
+  }
+
+  /**
+   * Gets the most recent user context message
+   * @returns The most recent user context content, or null if none found
+   */
+  public getRecentUserContext(): string | null {
+    // Look through recent messages for user context
+    const recentMessages = this.history.messages.slice(-10); // Check last 10 messages
+    for (let i = recentMessages.length - 1; i >= 0; i--) {
+      const msg = recentMessages[i];
+      if (msg.metadata.message_type === 'user_context' && msg.message instanceof HumanMessage) {
+        const content = msg.message.content;
+        if (typeof content === 'string') {
+          return content;
+        }
+        // If content is an array, extract text content
+        if (Array.isArray(content)) {
+          const textContent = content.find(
+            item => typeof item === 'object' && item !== null && 'type' in item && item.type === 'text',
+          );
+          if (textContent && 'text' in textContent) {
+            return textContent.text;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Adds a plan message to the history
    * @param plan - The raw description of the plan
    * @param position - The position to add the plan

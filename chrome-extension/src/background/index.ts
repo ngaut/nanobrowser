@@ -182,6 +182,23 @@ chrome.runtime.onConnect.addListener(port => {
             break;
           }
 
+          case 'user_context': {
+            if (!message.context) return port.postMessage({ type: 'error', error: 'No context provided' });
+            if (!message.tabId) return port.postMessage({ type: 'error', error: 'No tab ID provided' });
+
+            logger.info('user_context', message.tabId, message.context);
+
+            // If executor exists, add user context
+            if (currentExecutor) {
+              currentExecutor.addUserContext(message.context);
+              return port.postMessage({ type: 'success', msg: 'User context added' });
+            } else {
+              // No active executor to add context to
+              logger.info('user_context: no active executor to add context to');
+              return port.postMessage({ type: 'error', error: 'No active task to add context to' });
+            }
+          }
+
           case 'cancel_task': {
             if (!currentExecutor) return port.postMessage({ type: 'error', error: 'No task to cancel' });
             await currentExecutor.cancel();

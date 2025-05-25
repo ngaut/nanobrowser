@@ -65,9 +65,93 @@ const SidePanel = () => {
 
     // Save message to storage if we have a session and it's not a progress message
     if (effectiveSessionId && !isProgressMessage) {
-      chatHistoryStore
-        .addMessage(effectiveSessionId, newMessage)
-        .catch(err => console.error('Failed to save message to history:', err));
+      // Pre-process message to reduce size before saving
+      const processedMessage = {
+        ...newMessage,
+        data: newMessage.data
+          ? {
+              ...newMessage.data,
+              // Always remove screenshots from storage to save space
+              detailsObject: newMessage.data.detailsObject
+                ? {
+                    ...newMessage.data.detailsObject,
+                    currentPage: newMessage.data.detailsObject.currentPage
+                      ? {
+                          ...newMessage.data.detailsObject.currentPage,
+                          screenshot: null, // Always remove screenshots from storage
+                        }
+                      : undefined,
+                    // Also remove other large data that's not essential for history
+                    browserState: undefined, // Remove detailed browser state
+                    actionAnalysis: undefined, // Remove long analysis text
+                  }
+                : undefined,
+            }
+          : undefined,
+      };
+
+      chatHistoryStore.addMessage(effectiveSessionId, processedMessage).catch(async err => {
+        console.error('Failed to save message to history:', err);
+
+        // If it's a quota exceeded error, try to clean up old messages
+        if (err.message && err.message.includes('QUOTA_BYTES')) {
+          console.log('Storage quota exceeded, attempting aggressive cleanup...');
+          try {
+            // Get all sessions and find the oldest ones to clean up
+            const sessions = await chatHistoryStore.getSessionsMetadata();
+
+            // Sort by updatedAt (oldest first)
+            const sortedSessions = sessions.sort((a, b) => a.updatedAt - b.updatedAt);
+
+            // Delete the oldest 50% of sessions (more aggressive) or at least 2 sessions
+            const sessionsToDelete = Math.max(2, Math.floor(sortedSessions.length * 0.5));
+
+            for (let i = 0; i < sessionsToDelete && i < sortedSessions.length - 1; i++) {
+              const sessionToDelete = sortedSessions[i];
+              // Don't delete the current session
+              if (sessionToDelete.id !== effectiveSessionId) {
+                await chatHistoryStore.deleteSession(sessionToDelete.id);
+                console.log(`Deleted old session: ${sessionToDelete.title}`);
+              }
+            }
+
+            // Try to save the processed message again after cleanup
+            await chatHistoryStore.addMessage(effectiveSessionId, processedMessage);
+            console.log('Message saved successfully after cleanup');
+          } catch (cleanupErr) {
+            console.error('Failed to cleanup storage or save message after cleanup:', cleanupErr);
+            // If cleanup fails, try to save an even more minimal version
+            try {
+              const minimalMessage = {
+                actor: newMessage.actor,
+                content:
+                  newMessage.content.length > 500 ? newMessage.content.substring(0, 500) + '...' : newMessage.content,
+                timestamp: newMessage.timestamp,
+                // Remove all data to minimize size
+                data: undefined,
+                type: newMessage.type,
+                state: newMessage.state,
+              };
+              await chatHistoryStore.addMessage(effectiveSessionId, minimalMessage);
+              console.log('Minimal message saved successfully');
+            } catch (minimalErr) {
+              console.error('Failed to save even minimal message:', minimalErr);
+              // Last resort: clear all old sessions except current
+              try {
+                const allSessions = await chatHistoryStore.getSessionsMetadata();
+                for (const session of allSessions) {
+                  if (session.id !== effectiveSessionId) {
+                    await chatHistoryStore.deleteSession(session.id);
+                  }
+                }
+                console.log('Cleared all old sessions as last resort');
+              } catch (lastResortErr) {
+                console.error('Even last resort cleanup failed:', lastResortErr);
+              }
+            }
+          }
+        }
+      });
     }
   }, []);
 
@@ -84,6 +168,9 @@ const SidePanel = () => {
             case ExecutionState.TASK_START:
               // Reset historical session flag when a new task starts
               setIsHistoricalSession(false);
+              // Keep input enabled during execution for user context
+              setInputEnabled(true);
+              setShowStopButton(true);
               break;
             case ExecutionState.TASK_OK:
               setIsFollowUpMode(true);
@@ -103,8 +190,12 @@ const SidePanel = () => {
               skip = false;
               break;
             case ExecutionState.TASK_PAUSE:
+              // Keep input enabled during pause for user guidance
+              setInputEnabled(true);
               break;
             case ExecutionState.TASK_RESUME:
+              // Keep input enabled during resume
+              setInputEnabled(true);
               break;
             default:
               console.error('Invalid task state', state);
@@ -383,11 +474,17 @@ const SidePanel = () => {
         throw new Error('No active tab found');
       }
 
-      setInputEnabled(false);
-      setShowStopButton(true);
+      // Determine if we're sending during active execution
+      const isDuringExecution = showStopButton && !isFollowUpMode;
 
-      // Create a new chat session for this task if not in follow-up mode
-      if (!isFollowUpMode) {
+      // Only disable input and show stop button for new tasks, not for context during execution
+      if (!isDuringExecution) {
+        setInputEnabled(false);
+        setShowStopButton(true);
+      }
+
+      // Create a new chat session for this task if not in follow-up mode and not during execution
+      if (!isFollowUpMode && !isDuringExecution) {
         const newSession = await chatHistoryStore.createSession(
           text.substring(0, 50) + (text.length > 50 ? '...' : ''),
         );
@@ -413,26 +510,44 @@ const SidePanel = () => {
         setupConnection();
       }
 
-      // Send message using the utility function
-      if (isFollowUpMode) {
+      // Determine message type based on current state
+      let messageType: string;
+      let messagePayload: any;
+
+      if (isDuringExecution) {
+        // Send as user context during execution
+        messageType = 'user_context';
+        messagePayload = {
+          type: messageType,
+          context: text,
+          taskId: sessionIdRef.current,
+          tabId,
+        };
+        console.log('user_context sent', text, tabId, sessionIdRef.current);
+      } else if (isFollowUpMode) {
         // Send as follow-up task
-        await sendMessage({
-          type: 'follow_up_task',
+        messageType = 'follow_up_task';
+        messagePayload = {
+          type: messageType,
           task: text,
           taskId: sessionIdRef.current,
           tabId,
-        });
+        };
         console.log('follow_up_task sent', text, tabId, sessionIdRef.current);
       } else {
         // Send as new task
-        await sendMessage({
-          type: 'new_task',
+        messageType = 'new_task';
+        messagePayload = {
+          type: messageType,
           task: text,
           taskId: sessionIdRef.current,
           tabId,
-        });
+        };
         console.log('new_task sent', text, tabId, sessionIdRef.current);
       }
+
+      // Send message using the utility function
+      await sendMessage(messagePayload);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error('Task error', errorMessage);
@@ -715,6 +830,7 @@ const SidePanel = () => {
                       setInputTextRef.current = setter;
                     }}
                     isDarkMode={isDarkMode}
+                    isExecuting={showStopButton && !isFollowUpMode}
                   />
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -748,6 +864,7 @@ const SidePanel = () => {
                     setInputTextRef.current = setter;
                   }}
                   isDarkMode={isDarkMode}
+                  isExecuting={showStopButton && !isFollowUpMode}
                 />
               </div>
             )}

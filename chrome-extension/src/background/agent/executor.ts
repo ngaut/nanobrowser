@@ -105,6 +105,10 @@ export class Executor {
     this.context.actionResults = this.context.actionResults.filter(result => result.includeInMemory);
   }
 
+  addUserContext(context: string): void {
+    this.context.messageManager.addUserContext(context);
+  }
+
   /**
    * Execute the task
    *

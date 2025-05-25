@@ -3,6 +3,7 @@ import ReactJson, { type ReactJsonViewProps } from 'react-json-view';
 import { AgentEvent, EventStatus } from '../types/event';
 import { ACTOR_PROFILES } from '../types/message';
 import Linkify from './Linkify';
+import ProgressBar from './ProgressBar';
 import { Actors } from '@extension/storage';
 
 interface EventDetailsProps {
@@ -31,8 +32,74 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
   const colors = isDarkMode ? darkStatusColors[status] : statusColors[status];
   const duration = event.getFormattedDuration();
 
+  // Extract plan information for Navigator events
+  const isNavigatorEvent = event.actor === Actors.NAVIGATOR;
+  const navigatorDetails = isNavigatorEvent && event.data.detailsObject ? (event.data.detailsObject as any) : null;
+
+  // Debug: Log Navigator event details
+  if (isNavigatorEvent && navigatorDetails) {
+    console.log('🔍 Navigator Event Details:', {
+      state: event.state,
+      hasCurrentPage: !!navigatorDetails.currentPage,
+      hasScreenshot: !!navigatorDetails.currentPage?.screenshot,
+      hasPlanInfo: !!navigatorDetails.planInfo,
+      hasTemporalContext: !!navigatorDetails.temporalContext,
+      navigatorDetails,
+    });
+  }
+
+  // Additional debugging for all Navigator events
+  if (isNavigatorEvent) {
+    console.log('🔍 All Navigator Event Data:', {
+      actor: event.actor,
+      state: event.state,
+      hasDetailsObject: !!event.data.detailsObject,
+      detailsObject: event.data.detailsObject,
+      rawEventData: event.data,
+    });
+  }
+
+  // Extract plan progress information
+  const planInfo = navigatorDetails?.planInfo;
+  const currentPage = navigatorDetails?.currentPage;
+  const temporalContext = navigatorDetails?.temporalContext;
+
   return (
     <div className={`rounded-lg border ${isDarkMode ? 'border-slate-700' : 'border-gray-200'} p-2`}>
+      {/* Navigator Progress Bar - Show above the main event header */}
+      {isNavigatorEvent && temporalContext && (
+        <div className="mb-3">
+          <ProgressBar
+            currentStep={temporalContext.stepNumber || 1}
+            totalSteps={planInfo?.totalStepsInPlan || temporalContext.maxSteps}
+            currentPage={{
+              title: currentPage?.title || 'Unknown Page',
+              url: currentPage?.url || '',
+              screenshot: currentPage?.screenshot || null,
+            }}
+            nextStep={planInfo?.nextStep || 'Analyzing page...'}
+            isDarkMode={isDarkMode}
+          />
+        </div>
+      )}
+
+      {/* Fallback Progress Bar for Navigator events without temporalContext */}
+      {isNavigatorEvent && !temporalContext && navigatorDetails && (
+        <div className="mb-3">
+          <ProgressBar
+            currentStep={navigatorDetails.step || 1}
+            totalSteps={planInfo?.totalStepsInPlan || 50}
+            currentPage={{
+              title: currentPage?.title || 'Unknown Page',
+              url: currentPage?.url || '',
+              screenshot: currentPage?.screenshot || null,
+            }}
+            nextStep={planInfo?.nextStep || 'Analyzing page...'}
+            isDarkMode={isDarkMode}
+          />
+        </div>
+      )}
+
       {/* Event Header */}
       <div className="flex cursor-pointer items-center justify-between" onClick={() => setIsExpanded(!isExpanded)}>
         <div className="flex items-center gap-2">

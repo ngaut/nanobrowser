@@ -2,6 +2,7 @@ import type { Message } from '@extension/storage';
 import { ACTOR_PROFILES } from '../types/message';
 import { memo } from 'react';
 import EventDetails from './EventDetails';
+import ProgressBar from './ProgressBar';
 import { AgentEvent } from '../types/event';
 import { EventType } from '../types/event';
 
@@ -76,6 +77,12 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
   const actor = ACTOR_PROFILES[message.actor as keyof typeof ACTOR_PROFILES];
   const isProgress = message.content === 'Showing progress...';
 
+  // Extract progress information from message data if available
+  const progressData = message.data?.detailsObject as any;
+  const planInfo = progressData?.planInfo;
+  const currentPage = progressData?.currentPage;
+  const temporalContext = progressData?.temporalContext;
+
   return (
     <div
       className={`flex max-w-full gap-3 ${
@@ -102,9 +109,37 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
         <div className="space-y-0.5">
           <div className={`whitespace-pre-wrap break-words text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
             {isProgress ? (
-              <div className={`h-1 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                <div className="animate-progress h-full bg-blue-500" />
-              </div>
+              // Use new ProgressBar if we have plan information, otherwise fall back to simple animation
+              temporalContext ? (
+                <ProgressBar
+                  currentStep={temporalContext.stepNumber || 1}
+                  totalSteps={planInfo?.totalStepsInPlan || temporalContext.maxSteps}
+                  currentPage={{
+                    title: currentPage?.title || 'Unknown Page',
+                    url: currentPage?.url || '',
+                    screenshot: currentPage?.screenshot || null,
+                  }}
+                  nextStep={planInfo?.nextStep || 'Analyzing page...'}
+                  isDarkMode={isDarkMode}
+                />
+              ) : progressData && (currentPage || planInfo) ? (
+                // Fallback: Use ProgressBar even without temporalContext if we have some progress data
+                <ProgressBar
+                  currentStep={progressData.step || 1}
+                  totalSteps={planInfo?.totalStepsInPlan || 50}
+                  currentPage={{
+                    title: currentPage?.title || 'Unknown Page',
+                    url: currentPage?.url || '',
+                    screenshot: currentPage?.screenshot || null,
+                  }}
+                  nextStep={planInfo?.nextStep || 'Analyzing page...'}
+                  isDarkMode={isDarkMode}
+                />
+              ) : (
+                <div className={`h-1 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                  <div className="animate-progress h-full bg-blue-500" />
+                </div>
+              )
             ) : (
               message.content
             )}

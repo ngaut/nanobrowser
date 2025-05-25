@@ -55,6 +55,7 @@ interface EnhancedBrowserState {
   tabs: any[];
   pixelsAbove: number;
   pixelsBelow: number;
+  screenshot: string | null; // Base64 encoded screenshot, matching BrowserState type
 }
 
 interface NavigatorDetails {
@@ -67,6 +68,7 @@ interface NavigatorDetails {
     title: string;
     url: string;
     tabId: number;
+    screenshot: string | null; // Base64 encoded screenshot
   };
 
   browserState: {
@@ -227,7 +229,13 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
       // Create and emit enhanced navigator details
       const enhancedDetails = this.createEnhancedNavigatorDetails(taskInfo, browserState);
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...', undefined, enhancedDetails);
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.STEP_START,
+        'Navigating...',
+        enhancedDetails as unknown as Record<string, unknown>,
+        undefined,
+      );
 
       // Execute navigation logic
       const result = await this.executeNavigationStep();
@@ -339,6 +347,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       title: browserState.title || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE,
       url: browserState.url || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE,
       tabId: browserState.tabId,
+      screenshot: browserState.screenshot, // Include screenshot (string | null)
     };
 
     return {
@@ -399,6 +408,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
     if (this.context.paused || this.context.stopped) {
       return { done: false, cancelled: true };
+    }
+
+    // Check for recent user context and incorporate it
+    const userContext = this.context.messageManager.getRecentUserContext();
+    if (userContext) {
+      logger.info('🧠 Incorporating user context:', userContext);
+      // The user context is already added to the message history by MessageManager.addUserContext
+      // It will be included in the inputMessages below
     }
 
     // Get LLM response
