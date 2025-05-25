@@ -813,6 +813,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             // NEW: Extract page elements context from Planner
             if (planData.page_elements && typeof planData.page_elements === 'string') {
               pageElements = planData.page_elements;
+              logger.info('✅ Extracted page_elements from Planner:', pageElements.substring(0, 100) + '...');
+            } else {
+              logger.info('❌ No page_elements found in planData:', Object.keys(planData));
             }
           } catch (error) {
             // If JSON parsing fails, try to extract steps from raw text
