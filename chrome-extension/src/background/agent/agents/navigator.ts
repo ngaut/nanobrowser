@@ -229,10 +229,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
       // Create and emit enhanced navigator details
       const enhancedDetails = this.createEnhancedNavigatorDetails(taskInfo, browserState);
+
+      // Create a more informative details string from the action analysis
+      const detailsString = enhancedDetails.actionAnalysis || 'Navigating...';
+
       this.context.emitEvent(
         Actors.NAVIGATOR,
         ExecutionState.STEP_START,
-        'Navigating...',
+        detailsString,
         enhancedDetails as unknown as Record<string, unknown>,
         undefined,
       );
@@ -387,7 +391,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         stepNumber: this.context.nSteps + 1,
         maxSteps: this.context.options.maxSteps,
         progressPercentage: Math.round(((this.context.nSteps + 1) / this.context.options.maxSteps) * 100),
-        executionStartTime: this.context.taskId,
+        executionStartTime: this.context.executionStartTime,
         planningInterval: this.context.options.planningInterval,
         isPlannningStep: this.context.nSteps % this.context.options.planningInterval === 0,
       },

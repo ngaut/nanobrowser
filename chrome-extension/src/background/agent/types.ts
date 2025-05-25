@@ -74,6 +74,9 @@ export class AgentContext {
   // Shared current page information for all agents
   currentPage: CurrentPageInfo | null;
 
+  // Execution timing
+  executionStartTime: string;
+
   constructor(
     taskId: string,
     browserContext: BrowserContext,
@@ -97,6 +100,7 @@ export class AgentContext {
     this.actionResults = [];
     this.stateMessageAdded = false;
     this.currentPage = null;
+    this.executionStartTime = new Date().toISOString();
   }
 
   /**
