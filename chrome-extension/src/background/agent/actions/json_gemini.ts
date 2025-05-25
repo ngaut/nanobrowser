@@ -9,6 +9,9 @@ export const geminiNavigatorOutputSchema = {
         evaluation_previous_goal: {
           type: 'string',
         },
+        reasoning: {
+          type: 'string',
+        },
         memory: {
           type: 'string',
         },
@@ -16,7 +19,7 @@ export const geminiNavigatorOutputSchema = {
           type: 'string',
         },
       },
-      required: ['evaluation_previous_goal', 'memory', 'next_goal'],
+      required: ['evaluation_previous_goal', 'reasoning', 'memory', 'next_goal'],
     },
     action: {
       type: 'array',

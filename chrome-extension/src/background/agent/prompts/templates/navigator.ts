@@ -38,7 +38,7 @@ Interactive Elements
    "action":[{"one_action_name": {// action-specific parameter}}, // ... more actions in sequence]}
 
 
-2. ACTIONS: You can specify multiple actions in the list to be executed in sequence, availables action names are enum{ "input_text", "click_element", "go_to_url", "scroll_down", "scroll_up", "wait", "done" }. But always specify only one action name per item. Use maximum {{max_actions}} actions per sequence.
+2. ACTIONS: You can specify multiple actions in the list to be executed in sequence, availables action names are enum{ "input_text", "click_element", "go_to_url", "go_back", "refresh_page", "scroll_down", "scroll_up", "wait", "done" }. But always specify only one action name per item. Use maximum {{max_actions}} actions per sequence.
 Common action sequences:
 
 - Form filling: [{"input_text": {"intent": "Fill title", "index": 1, "text": "username"}}, {"input_text": {"intent": "Fill title", "index": 2, "text": "password"}}, {"click_element": {"intent": "Click submit button", "index": 3}}]
@@ -61,12 +61,24 @@ Common action sequences:
 4. NAVIGATION & ERROR HANDLING:
 
 - If no suitable elements exist, use other functions to complete the task
+  - **ERROR RECOVERY STRATEGIES**: When encountering problems, try these approaches in order:
+  1. **Check page type first**: If on new tab page (chrome://newtab/) or similar starting page, navigate directly to relevant content - do NOT try to refresh/reload empty starting pages
+  2. Wait for page to load properly (use wait action) - only for content websites that should have content
+  3. Scroll to find missing elements (if content might be below/above)
+  4. Refresh/reload page (refresh_page action OR go_to_url with same URL) ONLY for content websites that appear broken - NEVER refresh new tab pages or expected empty pages
+  5. Go back to previous working page (use go_back action) if available
+  6. Use search engines to find relevant information sources
+  7. Use different search terms or alternative URLs
+  8. Only mark task as done after exhausting multiple reasonable approaches
+- **DETECT ERROR PAGES**: Watch for navigation failures, missing content, or unusual page states that indicate errors
 - If stuck, try alternative approaches - like going back to a previous page, new search, new tab etc.
 - Handle popups/cookies by accepting or closing them
 - Use scroll to find elements you are looking for
+- If you need to gather information and don't know the exact source website, use search engines to efficiently locate relevant content
 - If you want to research something, open a new tab instead of using the current tab
 - If captcha pops up, try to solve it if a screenshot image is provided - else try a different approach
 - If the page is not fully loaded, use wait action
+- **RESILIENCE**: Don't give up after single failures - always try 2-3 different approaches before concluding a task cannot be completed
 
 5. TASK COMPLETION:
 

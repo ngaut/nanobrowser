@@ -112,6 +112,13 @@ interface NavigatorDetails {
     taskInstruction: string;
     activePlan: string;
   };
+  // Navigator's reasoning from current_state
+  reasoning?: {
+    evaluation_previous_goal: string;
+    reasoning: string;
+    memory: string;
+    next_goal: string;
+  };
 }
 
 export class NavigatorActionRegistry {
@@ -176,18 +183,43 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
       let response = undefined;
       try {
+        logger.info('🔧 Navigator invoking structured LLM with schema:', {
+          modelName: this.modelName,
+          toolName: this.modelOutputToolName,
+          schemaKeys: Object.keys(this.jsonSchema.properties || {}),
+          fullSchema: JSON.stringify(this.jsonSchema, null, 2),
+        });
+
         response = await structuredLlm.invoke(inputMessages, {
           signal: this.context.controller.signal,
           ...this.callOptions,
         });
 
+        logger.info('🔧 Navigator structured LLM response - FULL TRACE:', {
+          hasParsed: !!response.parsed,
+          hasRaw: !!response.raw,
+          rawType: response.raw?.constructor?.name,
+          fullParsedResponse: response.parsed ? JSON.stringify(response.parsed, null, 2) : null,
+          fullRawResponse: response.raw ? JSON.stringify(response.raw, null, 2) : null,
+        });
+
         if (response.parsed) {
+          logger.info('✅ Navigator parsed response successfully:', {
+            hasCurrentState: !!response.parsed.current_state,
+            hasAction: !!response.parsed.action,
+            actionCount: response.parsed.action?.length || 0,
+          });
           return response.parsed;
         }
       } catch (error) {
         if (isAbortedError(error)) {
           throw error;
         }
+        logger.error('❌ Navigator structured output failed:', {
+          error: error instanceof Error ? error.message : String(error),
+          modelName: this.modelName,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        });
         const errorMessage = `Failed to invoke ${this.modelName} with structured output: ${error}`;
         throw new Error(errorMessage);
       }
@@ -202,9 +234,18 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }>;
       };
 
+      logger.info('🔧 Navigator checking raw response for tool calls:', {
+        hasToolCalls: !!rawResponse.tool_calls,
+        toolCallsCount: rawResponse.tool_calls?.length || 0,
+        content: rawResponse.content?.toString().substring(0, 200) + '...',
+      });
+
       // sometimes LLM returns an empty content, but with one or more tool calls, so we need to check the tool calls
       if (rawResponse.tool_calls && rawResponse.tool_calls.length > 0) {
-        logger.info('Navigator structuredLlm tool call with empty content', rawResponse.tool_calls);
+        logger.info('✅ Navigator using tool call fallback:', {
+          toolCallsCount: rawResponse.tool_calls.length,
+          firstToolCall: rawResponse.tool_calls[0],
+        });
         // only use the first tool call
         const toolCall = rawResponse.tool_calls[0];
         return {
@@ -212,6 +253,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           action: [...toolCall.args.action],
         };
       }
+
+      logger.error('❌ Navigator could not parse response - no parsed output or tool calls');
       throw new Error('Could not parse response');
     }
     throw new Error('Navigator needs to work with LLM that supports tool calling');
@@ -265,6 +308,20 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         cancelled = true;
         return agentOutput;
       }
+
+      // Always emit STEP_OK event with reasoning if available
+      const enhancedDetailsWithReasoning = {
+        ...enhancedDetails,
+        reasoning: result.reasoning,
+      };
+
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.STEP_OK,
+        result.reasoning ? 'Navigation completed with reasoning' : 'Navigation completed',
+        enhancedDetailsWithReasoning as unknown as Record<string, unknown>,
+        this.context.actionResults,
+      );
 
       agentOutput.result = { done: result.done };
       return agentOutput;
@@ -436,7 +493,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
   /**
    * Execute the main navigation step logic
    */
-  private async executeNavigationStep(): Promise<{ done: boolean; cancelled: boolean }> {
+  private async executeNavigationStep(): Promise<{ done: boolean; cancelled: boolean; reasoning?: any }> {
     // Add browser state to memory
     await this.addStateMessageToMemory();
 
@@ -454,7 +511,99 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
     // Get LLM response
     const inputMessages = this.context.messageManager.getMessages();
-    const modelOutput = await this.invoke(inputMessages);
+
+    // Debug: Log COMPLETE LLM input
+    logger.infoDetailed('🤖 Navigator LLM Input - FULL TRACE:', {
+      messageCount: inputMessages.length,
+      modelName: this.modelName,
+      withStructuredOutput: this.withStructuredOutput,
+    });
+
+    // Log each message separately for full traceability
+    inputMessages.forEach((msg, index) => {
+      let contentStr: string;
+      try {
+        contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || {}, null, 2);
+      } catch {
+        contentStr = '[Unable to serialize content]';
+      }
+
+      logger.infoDetailed(`🤖 Navigator Input Message ${index}:`, {
+        type: msg.constructor.name,
+        contentType: typeof msg.content,
+        contentLength: contentStr.length,
+        hasToolCalls: 'tool_calls' in msg ? !!msg.tool_calls : false,
+        toolCallsCount: 'tool_calls' in msg ? (Array.isArray(msg.tool_calls) ? msg.tool_calls.length : 0) : 0,
+        fullContent: contentStr,
+      });
+    });
+
+    // Add timeout and retry logic for LLM invocation
+    let modelOutput: this['ModelOutput'] | null = null;
+    const maxRetries = 3;
+    const timeoutMs = 60000; // 60 seconds timeout
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`🤖 Navigator LLM invocation attempt ${attempt}/${maxRetries}`);
+
+        // Create timeout promise
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+
+        // Race between LLM call and timeout
+        modelOutput = await Promise.race([this.invoke(inputMessages), timeoutPromise]);
+
+        // Validate model output structure
+        if (!modelOutput) {
+          throw new Error('LLM returned null/undefined output');
+        }
+
+        if (!modelOutput.current_state) {
+          throw new Error('LLM output missing current_state field');
+        }
+
+        if (!modelOutput.action) {
+          throw new Error('LLM output missing action field');
+        }
+
+        // Debug: Log COMPLETE LLM output
+        logger.infoDetailed('🤖 Navigator LLM Output - FULL TRACE:', {
+          hasCurrentState: !!modelOutput.current_state,
+          actionCount: modelOutput.action?.length || 0,
+          fullCurrentState: modelOutput.current_state || null,
+          fullActions: modelOutput.action || [],
+          rawModelOutput: modelOutput,
+        });
+
+        logger.info(`✅ Navigator LLM invocation successful on attempt ${attempt}`);
+        break; // Success, exit retry loop
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`❌ Navigator LLM invocation failed on attempt ${attempt}/${maxRetries}:`, {
+          error: errorMessage,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          attempt,
+          maxRetries,
+        });
+
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          throw new Error(`Navigator LLM failed after ${maxRetries} attempts. Last error: ${errorMessage}`);
+        }
+
+        // Wait before retry (exponential backoff)
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
+        logger.info(`⏳ Waiting ${waitTime}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+
+    // Ensure modelOutput was successfully assigned
+    if (!modelOutput) {
+      throw new Error('Navigator LLM failed to produce valid output after all retry attempts');
+    }
 
     if (this.context.paused || this.context.stopped) {
       return { done: false, cancelled: true };
@@ -482,7 +631,18 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     );
 
     const done = actionResults.length > 0 && actionResults[actionResults.length - 1].isDone;
-    return { done, cancelled: false };
+
+    // Debug: Log the reasoning being returned
+    if (modelOutput.current_state) {
+      logger.infoDetailed('🧠 Navigator reasoning captured:', {
+        evaluation_previous_goal: modelOutput.current_state.evaluation_previous_goal,
+        reasoning: modelOutput.current_state.reasoning,
+        memory: modelOutput.current_state.memory,
+        next_goal: modelOutput.current_state.next_goal,
+      });
+    }
+
+    return { done, cancelled: false, reasoning: modelOutput.current_state };
   }
 
   /**
@@ -813,9 +973,20 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             // NEW: Extract page elements context from Planner
             if (planData.page_elements && typeof planData.page_elements === 'string') {
               pageElements = planData.page_elements;
-              logger.info('✅ Extracted page_elements from Planner:', pageElements.substring(0, 100) + '...');
+              logger.infoDetailed('✅ Extracted page_elements from Planner:', {
+                length: pageElements.length,
+                preview: pageElements.substring(0, 200) + '...',
+                elementCount: (pageElements.match(/\[\d+\]/g) || []).length,
+                fullPageElements: pageElements,
+              });
             } else {
-              logger.info('❌ No page_elements found in planData:', Object.keys(planData));
+              logger.infoDetailed('❌ No page_elements found in planData:', {
+                availableKeys: Object.keys(planData),
+                hasPageElements: 'page_elements' in planData,
+                pageElementsType: typeof planData.page_elements,
+                pageElementsValue: planData.page_elements,
+                fullPlanData: planData,
+              });
             }
           } catch (error) {
             // If JSON parsing fails, try to extract steps from raw text

@@ -65,6 +65,7 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
   const temporalContext = navigatorDetails?.temporalContext;
   const actionAnalysis = navigatorDetails?.actionAnalysis;
   const browserState = navigatorDetails?.browserState;
+  const reasoning = navigatorDetails?.reasoning;
 
   return (
     <div className={`rounded-lg border ${isDarkMode ? 'border-slate-700' : 'border-gray-200'} p-2`}>
@@ -89,6 +90,7 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
             temporalContext={temporalContext}
             actionAnalysis={actionAnalysis}
             browserState={browserState}
+            reasoning={reasoning}
           />
         </div>
       )}
@@ -113,6 +115,7 @@ export default function EventDetails({ event, isDarkMode = false }: EventDetails
             planInfo={planInfo}
             actionAnalysis={actionAnalysis}
             browserState={browserState}
+            reasoning={reasoning}
           />
         </div>
       )}

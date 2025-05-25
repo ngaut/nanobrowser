@@ -208,8 +208,18 @@ export default class MessageManager {
    */
   public addPlan(plan?: string, position?: number): void {
     if (plan) {
+      // Debug: Log COMPLETE plan being added
+      logger.infoDetailed('📋 Adding plan to message history - FULL TRACE:', {
+        planLength: plan.length,
+        position: position || 'end',
+        hasPageElements: plan.includes('page_elements'),
+        fullPlan: plan,
+      });
+
       const msg = new AIMessage({ content: `<plan>${plan}</plan>` });
       this.addMessageWithTokens(msg, null, position);
+    } else {
+      logger.info('📋 Attempted to add empty plan to message history');
     }
   }
 
@@ -226,6 +236,15 @@ export default class MessageManager {
    * @param modelOutput - The model output
    */
   public addModelOutput(modelOutput: Record<string, any>): void {
+    // Debug: Log COMPLETE model output being added
+    logger.infoDetailed('🤖 Adding model output to message history - FULL TRACE:', {
+      modelOutputKeys: Object.keys(modelOutput),
+      hasCurrentState: !!modelOutput.current_state,
+      hasAction: !!modelOutput.action,
+      actionCount: Array.isArray(modelOutput.action) ? modelOutput.action.length : 0,
+      fullModelOutput: modelOutput,
+    });
+
     const toolCallId = this.nextToolId();
     const toolCalls = [
       {
@@ -259,6 +278,34 @@ export default class MessageManager {
 
     let totalInputTokens = 0;
     logger.debug(`Messages in history: ${this.history.messages.length}:`);
+
+    // Debug: Log COMPLETE message history being returned
+    logger.infoDetailed('📜 Message Manager returning messages - FULL TRACE:', {
+      messageCount: this.history.messages.length,
+      totalTokens: this.history.totalTokens,
+      messages: this.history.messages.map((m, index) => {
+        let contentStr: string;
+        try {
+          contentStr =
+            typeof m.message.content === 'string' ? m.message.content : JSON.stringify(m.message.content, null, 2);
+        } catch {
+          contentStr = '[Unable to serialize content]';
+        }
+
+        return {
+          index,
+          type: m.message.constructor.name,
+          messageType: m.metadata.message_type,
+          tokens: m.metadata.tokens,
+          contentType: typeof m.message.content,
+          contentLength: contentStr.length,
+          hasToolCalls: 'tool_calls' in m.message ? !!m.message.tool_calls : false,
+          toolCallsCount:
+            'tool_calls' in m.message ? (Array.isArray(m.message.tool_calls) ? m.message.tool_calls.length : 0) : 0,
+          fullContent: contentStr,
+        };
+      }),
+    });
 
     for (const m of this.history.messages) {
       totalInputTokens += m.metadata.tokens;

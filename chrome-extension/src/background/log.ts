@@ -9,6 +9,8 @@ interface Logger {
   error: (...args: unknown[]) => void;
   group: (label: string) => void;
   groupEnd: () => void;
+  // Helper for detailed object logging
+  infoDetailed: (message: string, obj: unknown) => void;
 }
 
 const createLogger = (namespace: string): Logger => {
@@ -25,6 +27,16 @@ const createLogger = (namespace: string): Logger => {
     error: (...args: unknown[]) => console.error(prefix, ...args),
     group: (label: string) => console.group(`${prefix} ${label}`),
     groupEnd: () => console.groupEnd(),
+    // Helper for detailed object logging
+    infoDetailed: (message: string, obj: unknown) => {
+      try {
+        const serialized = typeof obj === 'object' && obj !== null ? JSON.stringify(obj, null, 2) : String(obj);
+        console.info(prefix, message, '\n' + serialized);
+      } catch (error) {
+        // If JSON.stringify fails (circular references, etc.), fall back to regular logging
+        console.info(prefix, message, obj);
+      }
+    },
   };
 };
 

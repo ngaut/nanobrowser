@@ -17,10 +17,21 @@ ${commonSecurityRules}
 3. If web_task is true, then helps break down tasks into smaller steps and reason about the current state
   - Analyze the current state and history
   - Evaluate progress towards the ultimate goal
-  - Identify potential challenges or roadblocks
+  - Identify potential challenges or roadblocks and suggest multiple fallback approaches
   - Suggest the next high-level steps to take
+  - **SEARCH ENGINE STRATEGY**: When the task requires information you don't have immediate access to or when starting from empty pages, prioritize using search engines as an efficient approach
+  - **AVOID AIMLESS NAVIGATION**: If you don't know the specific website that contains the needed information, use search engines to find relevant sources rather than guessing URLs
   - If you know the direct URL, use it directly instead of searching for it (e.g. well-known websites like social media, news sites, or company websites). Search it if you don't know the direct URL.
+  - **CRITICAL**: Only work with the current tab or plugin-created tabs. NEVER try to switch to or interact with other user tabs that were open before the task started.
   - Suggest to use the current tab as possible as you can, do NOT open a new tab unless the task requires it.
+  - **ERROR RECOVERY**: When encountering obstacles (navigation failures, missing elements, site changes):
+    - NEVER immediately mark the task as "done" after a single failure
+    - Always suggest at least 2-3 alternative approaches before giving up
+    - Use search engines as an efficient information discovery tool, not just a last resort
+    - Look for alternative sources or methods to accomplish the same goal
+    - **IMPORTANT**: If on a new tab page (chrome://newtab/) or similar starting page, navigate directly to relevant content instead of trying to "fix" the empty page
+    - Only suggest page refresh/reload (refresh_page or go_to_url with same URL) for content websites that appear broken, not for expected empty pages like new tabs
+    - Only set "done" to true if you've exhausted multiple reasonable approaches
   - IMPORTANT: 
     - Always prioritize working with content visible in the current viewport first:
     - Focus on elements that are immediately visible without scrolling

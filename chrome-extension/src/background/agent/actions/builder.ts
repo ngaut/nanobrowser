@@ -6,6 +6,7 @@ import {
   goToUrlActionSchema,
   inputTextActionSchema,
   openTabActionSchema,
+  refreshPageActionSchema,
   searchGoogleActionSchema,
   switchTabActionSchema,
   type ActionSchema,
@@ -297,6 +298,39 @@ export class ActionBuilder {
     }, goBackActionSchema);
     actions.push(goBack);
 
+    const refreshPage = new Action(async (input: z.infer<typeof refreshPageActionSchema.schema>) => {
+      const actionName = refreshPageActionSchema.name;
+      const baseDetail = 'Refreshing current page';
+      const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
+        actionName: actionName,
+        actionArgs: input,
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
+
+      const page = await this.context.browserContext.getCurrentPage();
+      await page.refreshPage();
+      const msg = 'Page refreshed successfully - useful for recovering from errors or loading issues';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: msg,
+        currentPage: actStartDetails.currentPage,
+      });
+      return new ActionResult({
+        extractedContent: msg,
+        includeInMemory: true,
+      });
+    }, refreshPageActionSchema);
+    actions.push(refreshPage);
+
     const wait = new Action(async (input: z.infer<typeof waitActionSchema.schema>) => {
       const seconds = input.seconds || 3;
       const actionName = waitActionSchema.name;
@@ -422,6 +456,13 @@ export class ActionBuilder {
             // find the tab id that is not in the initial tab ids
             const newTabId = Array.from(currentTabIds).find(id => !initialTabIds.has(id));
             if (newTabId) {
+              // SECURITY FIX: Mark new tab as plugin-owned before switching
+              // This tab was created by user action within plugin context
+              if (!this.context.browserContext.isPluginOwnedTab(newTabId)) {
+                // Add a method to adopt new tabs
+                await this.context.browserContext.adoptTab(newTabId);
+                logger.info(`Adopted new tab ${newTabId} as plugin-owned (created by click)`);
+              }
               await this.context.browserContext.switchTab(newTabId);
             }
           }

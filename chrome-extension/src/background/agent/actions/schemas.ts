@@ -42,6 +42,14 @@ export const goBackActionSchema: ActionSchema = {
   }),
 };
 
+export const refreshPageActionSchema: ActionSchema = {
+  name: 'refresh_page',
+  description: 'Refresh/reload the current page - useful for recovering from errors or loading issues',
+  schema: z.object({
+    intent: z.string().optional(),
+  }),
+};
+
 export const clickElementActionSchema: ActionSchema = {
   name: 'click_element',
   description: 'Click element by index',

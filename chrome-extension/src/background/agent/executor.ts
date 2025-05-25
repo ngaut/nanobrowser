@@ -201,9 +201,22 @@ export class Executor {
           }
           validatorFailed = true;
           context.consecutiveValidatorFailures++;
-          if (context.consecutiveValidatorFailures >= context.options.maxValidatorFailures) {
-            logger.error(`Stopping due to ${context.options.maxValidatorFailures} consecutive validator failures`);
+
+          // Be more lenient - only stop if we've had many consecutive failures AND we're deep into the execution
+          const isDeepIntoExecution = step >= Math.min(allowedMaxSteps * 0.7, 15); // At least 70% through or 15 steps
+          const tooManyFailures = context.consecutiveValidatorFailures >= context.options.maxValidatorFailures;
+
+          if (tooManyFailures && isDeepIntoExecution) {
+            logger.error(
+              `Stopping due to ${context.options.maxValidatorFailures} consecutive validator failures after ${step} steps`,
+            );
             throw new Error('Too many failures of validation');
+          } else if (tooManyFailures) {
+            logger.warning(
+              `${context.options.maxValidatorFailures} consecutive validator failures, but continuing since we're only at step ${step}`,
+            );
+            // Reset failure count to give more chances
+            context.consecutiveValidatorFailures = Math.floor(context.options.maxValidatorFailures / 2);
           }
         }
       }

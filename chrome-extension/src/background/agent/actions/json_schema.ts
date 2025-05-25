@@ -9,6 +9,10 @@ export const jsonNavigatorOutputSchema = {
           title: 'Evaluation of previous goal',
           type: 'string',
         },
+        reasoning: {
+          title: 'Reasoning',
+          type: 'string',
+        },
         memory: {
           title: 'Memory',
           type: 'string',
@@ -18,7 +22,7 @@ export const jsonNavigatorOutputSchema = {
           type: 'string',
         },
       },
-      required: ['evaluation_previous_goal', 'memory', 'next_goal'],
+      required: ['evaluation_previous_goal', 'reasoning', 'memory', 'next_goal'],
       title: 'AgentBrain',
       type: 'object',
     },

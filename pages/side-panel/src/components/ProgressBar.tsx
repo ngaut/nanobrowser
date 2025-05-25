@@ -58,6 +58,13 @@ interface ProgressBarProps {
     selectionReasoning?: string;
     navigatorContext?: any;
   };
+  // Navigator's reasoning from current_state
+  reasoning?: {
+    evaluation_previous_goal: string;
+    reasoning: string;
+    memory: string;
+    next_goal: string;
+  };
 }
 
 export default memo(function ProgressBar({
@@ -72,6 +79,7 @@ export default memo(function ProgressBar({
   actionAnalysis,
   browserState,
   lastActionContext,
+  reasoning,
 }: ProgressBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false);
@@ -343,6 +351,49 @@ export default memo(function ProgressBar({
                   <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 rounded-b-lg">
                     <div className="text-xs font-medium truncate">{pageTitle}</div>
                     <div className="text-xs text-gray-300 truncate">{pageUrl}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Navigator Reasoning */}
+            {reasoning && (
+              <div>
+                <h4 className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  🧠 Navigator Reasoning
+                </h4>
+                <div className="space-y-3">
+                  <div>
+                    <div className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Previous Goal Evaluation:
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {reasoning.evaluation_previous_goal}
+                    </div>
+                  </div>
+                  <div>
+                    <div className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>
+                      Current Reasoning:
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {reasoning.reasoning}
+                    </div>
+                  </div>
+                  <div>
+                    <div className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                      Memory:
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {reasoning.memory}
+                    </div>
+                  </div>
+                  <div>
+                    <div className={`text-xs font-medium mb-1 ${isDarkMode ? 'text-orange-400' : 'text-orange-600'}`}>
+                      Next Goal:
+                    </div>
+                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {reasoning.next_goal}
+                    </div>
                   </div>
                 </div>
               </div>

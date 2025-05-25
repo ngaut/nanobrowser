@@ -15,7 +15,7 @@ ${commonSecurityRules}
   - Compile the final answer from provided context, do NOT make up any information not provided in the context
   - Make answers concise and easy to read
   - Include relevant numerical data when available, but do NOT make up any numbers
-  - Include exact urls when available, but do NOT make up any urls
+  - When extracting sources from action results, extract each URL separately - NEVER concatenate multiple URLs together
   - Format the final answer in a user-friendly way
 
 # SPECIAL CASES:
@@ -28,8 +28,8 @@ ${commonSecurityRules}
   - answer: ask the user to sign in by themselves
 5. If the output is correct and the task is completed, you should respond with:
   - is_valid: true
-  - reason: "Task completed. Key steps to achieve the answer: [Based on the provided action history, briefly summarize the main sequence of actions, e.g., 'Searched Google for X, navigated to Y.com, then extracted the pricing information.']. Source(s): [Mention key source URLs if the answer is derived from web content and not already clear from the key steps, e.g., 'example.com/productpage.']"
-  - answer: The final answer to the task. If the answer includes information directly from specific URLs (and these are not redundant with the 'Source(s)' in the reason), include them here.
+  - reason: "Task completed. Key steps to achieve the answer: [Based on the provided action history, briefly summarize the main sequence of actions]. Source(s): [If action results reference web sources, list the complete source URLs separated by spaces. Extract each URL separately - DO NOT concatenate URLs together.]"
+  - answer: The final answer to the task. Include key information from the sources but do not duplicate the source URLs here.
 
 # RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
 {
@@ -61,6 +61,14 @@ ${commonSecurityRules}
   "is_valid": true, 
   "reason": "The task is completed",
   "answer": "✅ Successfully followed @nanobrowser_ai on X."
+}
+</example_output>
+
+<example_output>
+{
+  "is_valid": true, 
+  "reason": "Task completed. Key steps to achieve the answer: Searched for relevant information, navigated to appropriate websites, and extracted the requested data. Source(s): [complete URLs from actual sources used]",
+  "answer": "✅ Task completed successfully with the requested information."
 }
 </example_output>
 

@@ -81,16 +81,49 @@ abstract class BasePrompt {
     }
 
     const currentTab = `{id: ${browserState.tabId}, url: ${browserState.url}, title: ${browserState.title}}`;
-    const otherTabs = browserState.tabs
-      .filter(tab => tab.id !== browserState.tabId)
+
+    // SECURITY FIX: Only show plugin-owned tabs, not user tabs
+    const pluginOwnedTabs = browserState.tabs
+      .filter(tab => tab.id !== browserState.tabId) // Exclude current tab
+      .filter(tab => context.browserContext.isPluginOwnedTab(tab.id)) // Only plugin-owned tabs
       .map(tab => `- {id: ${tab.id}, url: ${tab.url}, title: ${tab.title}}`);
+
+    let tabsSection = '';
+    if (pluginOwnedTabs.length > 0) {
+      tabsSection = `Other plugin-created tabs (you can switch to these):
+  ${pluginOwnedTabs.join('\n')}`;
+    } else {
+      tabsSection = 'No other plugin-created tabs available. You can create new tabs if needed with open_tab action.';
+    }
+
+    // Detect common error scenarios based on page state (avoid hardcoded patterns)
+    let errorContext = '';
+    if (browserState.elementTree.clickableElementsToString().length === 0) {
+      // Check if this is an expected empty page (new tab, about:blank, etc.)
+      const isExpectedEmptyPage =
+        browserState.url?.includes('chrome://newtab') ||
+        browserState.url?.includes('about:blank') ||
+        browserState.url === '' ||
+        browserState.title?.includes('New Tab');
+
+      if (isExpectedEmptyPage) {
+        errorContext = `
+📋 STARTING PAGE: Currently on a new tab or starting page. Navigate directly to relevant content for your task instead of trying to refresh or fix this page.`;
+      } else if ((browserState.pixelsBelow || 0) === 0 && (browserState.pixelsAbove || 0) === 0) {
+        errorContext = `
+⚠️ POTENTIAL ISSUE: Content page appears empty - no interactive elements and no scrollable content. This could indicate a loading issue, error page, or content that requires different navigation approach.`;
+      } else {
+        errorContext = `
+⚠️ LIMITED INTERACTION: No interactive elements detected in current viewport. Content may be available through scrolling, page loading may be incomplete, or this could be an error/restricted page.`;
+      }
+    }
+
     const stateDescription = `
 [Task history memory ends]
 [Current state starts here]
 The following is one-time information - if you need to remember it write it to memory:
 Current tab: ${currentTab}
-Other available tabs:
-  ${otherTabs.join('\n')}
+${tabsSection}${errorContext}
 Interactive elements from top layer of the current page inside the viewport:
 ${formattedElementsText}
 ${stepInfoDescription}

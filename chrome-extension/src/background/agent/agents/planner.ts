@@ -110,11 +110,59 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         plannerMessages[plannerMessages.length - 1] = new HumanMessage(newMsg);
       }
 
+      // Debug: Log COMPLETE LLM input
+      logger.infoDetailed('🧠 Planner LLM Input - FULL TRACE:', {
+        messageCount: plannerMessages.length,
+        modelName: this.modelName,
+        withStructuredOutput: this.withStructuredOutput,
+        useVisionForPlanner: this.context.options.useVisionForPlanner,
+      });
+
+      // Log each message separately for full traceability
+      plannerMessages.forEach((msg, index) => {
+        let contentStr: string;
+        try {
+          contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
+        } catch {
+          contentStr = '[Unable to serialize content]';
+        }
+
+        logger.infoDetailed(`🧠 Planner Input Message ${index}:`, {
+          type: msg.constructor.name,
+          contentType: typeof msg.content,
+          contentLength: contentStr.length,
+          hasToolCalls: 'tool_calls' in msg ? !!msg.tool_calls : false,
+          toolCallsCount: 'tool_calls' in msg ? (Array.isArray(msg.tool_calls) ? msg.tool_calls.length : 0) : 0,
+          fullContent: contentStr,
+        });
+      });
+
       const modelOutput = await this.invoke(plannerMessages);
       if (!modelOutput) {
         throw new Error('Failed to validate planner output');
       }
-      this.context.messageManager.addPlan(modelOutput.next_steps);
+
+      // Validate that page_elements is provided for web tasks
+      if (modelOutput.web_task && (!modelOutput.page_elements || modelOutput.page_elements.trim() === '')) {
+        logger.warning('⚠️ Planner output missing page_elements for web task - this may cause Navigator issues');
+        // Don't throw error, but log warning for debugging
+      }
+
+      // Debug: Log COMPLETE LLM output
+      logger.infoDetailed('🧠 Planner LLM Output - FULL TRACE:', {
+        fullModelOutput: modelOutput,
+        observation: modelOutput.observation,
+        challenges: modelOutput.challenges,
+        done: modelOutput.done,
+        next_steps: modelOutput.next_steps,
+        reasoning: modelOutput.reasoning,
+        web_task: modelOutput.web_task,
+        page_elements: modelOutput.page_elements,
+        observationDataSource_urls: modelOutput.observationDataSource_urls,
+        observationDataSource_descriptions: modelOutput.observationDataSource_descriptions,
+      });
+      // Note: Plan is added to message history by the Executor, not here
+      // this.context.messageManager.addPlan(modelOutput.next_steps); // REMOVED: Duplicate plan addition
       this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_OK, 'Planning successful', undefined, modelOutput);
 
       return {

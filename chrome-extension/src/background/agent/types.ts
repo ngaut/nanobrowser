@@ -240,6 +240,7 @@ export type WrappedActionResult = ActionResult & {
 
 export const agentBrainSchema = z.object({
   evaluation_previous_goal: z.string(),
+  reasoning: z.string(),
   memory: z.string(),
   next_goal: z.string(),
 });

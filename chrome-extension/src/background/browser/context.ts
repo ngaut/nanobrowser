@@ -15,6 +15,9 @@ export default class BrowserContext {
   private _config: BrowserContextConfig;
   private _currentTabId: number | null = null;
   private _attachedPages: Map<number, Page> = new Map();
+  private _pluginOwnedTabs: Set<number> = new Set();
+  private _initialUserTabs: Set<number> = new Set();
+  private _sessionInitialized: boolean = false;
 
   constructor(config: Partial<BrowserContextConfig>) {
     this._config = { ...DEFAULT_BROWSER_CONTEXT_CONFIG, ...config };
@@ -79,6 +82,7 @@ export default class BrowserContext {
         }
       }
       this._attachedPages.delete(staleTabId);
+      this._pluginOwnedTabs.delete(staleTabId); // Also remove from plugin-owned tabs
     }
 
     // detach all remaining pages
@@ -91,6 +95,11 @@ export default class BrowserContext {
     }
     this._attachedPages.clear();
     this._currentTabId = null;
+
+    // Reset session state
+    this._pluginOwnedTabs.clear();
+    this._initialUserTabs.clear();
+    this._sessionInitialized = false;
   }
 
   public async attachPage(page: Page): Promise<boolean> {
@@ -125,21 +134,27 @@ export default class BrowserContext {
       throw new Error('Maximum recursion depth exceeded while getting current page. Unable to find valid tab.');
     }
 
+    // Ensure session is initialized
+    await this.initializeSession();
+
     // 1. If _currentTabId not set, query the active tab and attach it
     if (!this._currentTabId) {
       let activeTab: chrome.tabs.Tab;
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
       if (!tab?.id) {
-        // open a new tab with blank page
+        // No active tab found, create a new one
         const newTab = await chrome.tabs.create({ url: this._config.homePageUrl });
         if (!newTab.id) {
-          // this should rarely happen
           throw new Error('No tab ID available');
         }
+        this._pluginOwnedTabs.add(newTab.id);
         activeTab = newTab;
       } else {
+        // Use the active tab (already marked as plugin-owned in initializeSession)
         activeTab = tab;
       }
+
       logger.info('active tab', activeTab.id, activeTab.url, activeTab.title);
       const page = await this._getOrCreatePage(activeTab);
       await this.attachPage(page);
@@ -295,6 +310,11 @@ export default class BrowserContext {
   public async switchTab(tabId: number): Promise<Page> {
     logger.info('switchTab', tabId);
 
+    // SECURITY CHECK: Only allow switching to plugin-owned tabs
+    if (this.isUserTab(tabId)) {
+      throw new Error(`Cannot switch to user tab ${tabId}. Plugin can only operate on tabs it created.`);
+    }
+
     try {
       // Validate tab exists first
       await chrome.tabs.get(tabId);
@@ -367,6 +387,11 @@ export default class BrowserContext {
       if (!tab.id) {
         throw new Error('No tab ID available');
       }
+
+      // Mark this tab as plugin-owned
+      this._pluginOwnedTabs.add(tab.id);
+      logger.info(`Created plugin-owned tab ${tab.id} for URL: ${url}`);
+
       // Wait for tab events
       await this.waitForTabEvents(tab.id);
 
@@ -385,8 +410,17 @@ export default class BrowserContext {
   }
 
   public async closeTab(tabId: number): Promise<void> {
+    // SECURITY CHECK: Only allow closing plugin-owned tabs
+    if (this.isUserTab(tabId)) {
+      throw new Error(`Cannot close user tab ${tabId}. Plugin can only operate on tabs it created.`);
+    }
+
     await this.detachPage(tabId);
     await chrome.tabs.remove(tabId);
+
+    // Remove from plugin-owned tabs
+    this._pluginOwnedTabs.delete(tabId);
+
     // update current tab id if needed
     if (this._currentTabId === tabId) {
       this._currentTabId = null;
@@ -406,19 +440,8 @@ export default class BrowserContext {
   }
 
   public async getTabInfos(): Promise<TabInfo[]> {
-    const tabs = await chrome.tabs.query({});
-    const tabInfos: TabInfo[] = [];
-
-    for (const tab of tabs) {
-      if (tab.id && tab.url && tab.title) {
-        tabInfos.push({
-          id: tab.id,
-          url: tab.url,
-          title: tab.title,
-        });
-      }
-    }
-    return tabInfos;
+    // IMPORTANT: Only return plugin-owned tabs, not user tabs
+    return await this.getPluginTabInfos();
   }
 
   public async getState(useVision = false, cacheClickableElementsHashes = false): Promise<BrowserState> {
@@ -441,5 +464,86 @@ export default class BrowserContext {
     if (page) {
       await page.removeHighlight();
     }
+  }
+
+  /**
+   * Initialize session by recording existing user tabs
+   * These tabs should never be touched by the plugin, EXCEPT the current active tab
+   */
+  public async initializeSession(): Promise<void> {
+    if (this._sessionInitialized) {
+      return;
+    }
+
+    // Get current active tab - this should be available for plugin operation
+    const [currentActiveTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // Record all existing tabs as user tabs that should not be touched,
+    // EXCEPT the current active tab which the user wants to operate on
+    const existingTabs = await chrome.tabs.query({});
+    this._initialUserTabs = new Set(
+      existingTabs
+        .filter(tab => tab.id !== undefined && tab.id !== currentActiveTab?.id) // Exclude current active tab
+        .map(tab => tab.id!), // Safe to use ! since we filtered out undefined
+    );
+
+    // The current active tab becomes plugin-owned immediately
+    if (currentActiveTab?.id) {
+      this._pluginOwnedTabs.add(currentActiveTab.id);
+      logger.info(`Current active tab ${currentActiveTab.id} adopted as plugin-owned for task operation`);
+    }
+
+    this._sessionInitialized = true;
+
+    logger.info(
+      `Session initialized. Protecting ${this._initialUserTabs.size} existing user tabs. Active tab ${currentActiveTab?.id} available for plugin operation.`,
+    );
+  }
+
+  /**
+   * Check if a tab belongs to the plugin (was created by plugin during this session)
+   */
+  public isPluginOwnedTab(tabId: number): boolean {
+    return this._pluginOwnedTabs.has(tabId);
+  }
+
+  /**
+   * Check if a tab is a user tab that should not be touched
+   */
+  public isUserTab(tabId: number): boolean {
+    return this._initialUserTabs.has(tabId);
+  }
+
+  /**
+   * Get only plugin-owned tabs
+   */
+  public async getPluginTabInfos(): Promise<TabInfo[]> {
+    const allTabs = await chrome.tabs.query({});
+    const pluginTabs: TabInfo[] = [];
+
+    for (const tab of allTabs) {
+      if (tab.id && tab.url && tab.title && this.isPluginOwnedTab(tab.id)) {
+        pluginTabs.push({
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+        });
+      }
+    }
+    return pluginTabs;
+  }
+
+  /**
+   * Adopt a tab as plugin-owned (e.g., when it's created by clicking a link)
+   * This should only be used for tabs that are created as a result of plugin actions
+   */
+  public async adoptTab(tabId: number): Promise<void> {
+    if (!this.isUserTab(tabId) && !this.isPluginOwnedTab(tabId)) {
+      this._pluginOwnedTabs.add(tabId);
+      logger.info(`Adopted tab ${tabId} as plugin-owned`);
+    } else if (this.isUserTab(tabId)) {
+      throw new Error(`Cannot adopt user tab ${tabId}. This tab existed before the plugin session started.`);
+    }
+    // If already plugin-owned, do nothing
   }
 }
