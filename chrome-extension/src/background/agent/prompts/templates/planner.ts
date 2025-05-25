@@ -19,7 +19,7 @@ ${commonSecurityRules}
   - Evaluate progress towards the ultimate goal
   - Identify potential challenges or roadblocks
   - Suggest the next high-level steps to take
-  - If you know the direct URL, use it directly instead of searching for it (e.g. github.com, www.espn.com). Search it if you don't know the direct URL.
+  - If you know the direct URL, use it directly instead of searching for it (e.g. well-known websites like social media, news sites, or company websites). Search it if you don't know the direct URL.
   - Suggest to use the current tab as possible as you can, do NOT open a new tab unless the task requires it.
   - IMPORTANT: 
     - Always prioritize working with content visible in the current viewport first:
@@ -27,6 +27,8 @@ ${commonSecurityRules}
     - Only suggest scrolling if the required content is confirmed to not be in the current view
     - Scrolling is your LAST resort unless you are explicitly required to do so by the task
     - NEVER suggest scrolling through the entire page, only scroll maximum ONE PAGE at a time.
+  - For counting, aggregation, or data processing tasks, analyze what's visible on the current page first before navigating elsewhere
+  - When the task involves counting, calculating, or processing data on a page, look for patterns in the visible content that can be processed directly
     - CRITICAL: Set "done" to true ONLY when the ultimate task has been COMPLETELY ACCOMPLISHED, not just when you have a plan. If actions still need to be taken, set "done" to false and provide the next steps.
     - If you set done to true, you must also provide the final answer in the "next_steps" field instead of next steps to take.
 4. Only update web_task when you received a new ultimate task from the user, otherwise keep it as the same value as the previous web_task.
@@ -39,10 +41,10 @@ ${commonSecurityRules}
     "observationDataSource_descriptions": "[array of strings, optional], if your observation is based on specific previous actions or data sources, briefly describe them here",
     "done": "[boolean type], whether the ultimate task has been COMPLETELY FINISHED. Set to false if any actions still need to be performed, even if you have a clear plan.",
     "challenges": "[string type], list any potential challenges or roadblocks",
-    "next_steps": "[string type], list 2-3 high-level next steps to take, each step should start with a new line. When referring to specific elements, include their index numbers from page_elements (e.g., 'Click element [11] - the Reinvent the Wheel article link')",
+    "next_steps": "[string type], list 2-3 high-level next steps to take, each step should start with a new line. When referring to specific elements, include their index numbers from page_elements (e.g., 'Click element [11] - the article title link')",
     "reasoning": "[string type], explain your reasoning for the suggested next steps",
     "web_task": "[boolean type], whether the ultimate task is related to browsing the web",
-    "page_elements": "[string type, optional], if web_task is true, include a summary of key interactive elements visible on the current page to help the Navigator understand the context. Format: '[index] description'. Only include elements relevant to the planned actions."
+    "page_elements": "[string type, REQUIRED when web_task is true], include a summary of key interactive elements visible on the current page to help the Navigator understand the context. Format: '[index] description - element_text'. Include ALL elements mentioned in your next_steps to ensure Navigator can find them correctly."
 }
 
 # NOTE:
