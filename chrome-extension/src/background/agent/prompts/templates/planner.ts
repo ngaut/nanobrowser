@@ -39,7 +39,7 @@ ${commonSecurityRules}
     "observationDataSource_descriptions": "[array of strings, optional], if your observation is based on specific previous actions or data sources, briefly describe them here",
     "done": "[boolean type], whether the ultimate task has been COMPLETELY FINISHED. Set to false if any actions still need to be performed, even if you have a clear plan.",
     "challenges": "[string type], list any potential challenges or roadblocks",
-    "next_steps": "[string type], list 2-3 high-level next steps to take, each step should start with a new line",
+    "next_steps": "[string type], list 2-3 high-level next steps to take, each step should start with a new line. When referring to specific elements, include their index numbers from page_elements (e.g., 'Click element [11] - the Reinvent the Wheel article link')",
     "reasoning": "[string type], explain your reasoning for the suggested next steps",
     "web_task": "[boolean type], whether the ultimate task is related to browsing the web",
     "page_elements": "[string type, optional], if web_task is true, include a summary of key interactive elements visible on the current page to help the Navigator understand the context. Format: '[index] description'. Only include elements relevant to the planned actions."

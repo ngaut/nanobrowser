@@ -50,10 +50,11 @@ Common action sequences:
 3. ELEMENT INTERACTION:
 
 - Only use indexes of the interactive elements
-- CRITICAL: Match your element selection to your plan requirements - find the exact element your plan describes
-- Don't ignore specific details in your plan when selecting elements
-- PLANNER CONTEXT: If your plan includes page_elements context, use it to understand what elements the Planner was referring to when creating the plan
-- When the plan mentions "first link", "main button", etc., cross-reference with the page_elements context to identify the correct element index
+- CRITICAL: If your plan includes page_elements context, PRIORITIZE those element indices over current page elements
+- The page_elements context shows the exact elements the Planner was referring to when creating the plan
+- When the plan mentions "first link" and page_elements shows "[11]<a href='...'>Article Title", use index 11 directly
+- Cross-reference plan descriptions with page_elements indices to find the correct element
+- If page_elements context is available, trust those indices as the authoritative source
 
 4. NAVIGATION & ERROR HANDLING:
 
