@@ -82,6 +82,8 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
   const planInfo = progressData?.planInfo;
   const currentPage = progressData?.currentPage;
   const temporalContext = progressData?.temporalContext;
+  const actionAnalysis = progressData?.actionAnalysis;
+  const browserState = progressData?.browserState;
 
   return (
     <div
@@ -121,6 +123,10 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
                   }}
                   nextStep={planInfo?.nextStep || 'Analyzing page...'}
                   isDarkMode={isDarkMode}
+                  planInfo={planInfo}
+                  temporalContext={temporalContext}
+                  actionAnalysis={actionAnalysis}
+                  browserState={browserState}
                 />
               ) : progressData && (currentPage || planInfo) ? (
                 // Fallback: Use ProgressBar even without temporalContext if we have some progress data
@@ -134,6 +140,9 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
                   }}
                   nextStep={planInfo?.nextStep || 'Analyzing page...'}
                   isDarkMode={isDarkMode}
+                  planInfo={planInfo}
+                  actionAnalysis={actionAnalysis}
+                  browserState={browserState}
                 />
               ) : (
                 <div className={`h-1 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
