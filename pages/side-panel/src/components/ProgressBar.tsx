@@ -18,6 +18,9 @@ interface ProgressBarProps {
     nextStep: string;
     upcomingSteps: string[];
     totalStepsInPlan: number;
+    currentPlanStep?: number;
+    planCreatedAtStep?: number;
+    stepsSincePlanCreated?: number;
   };
   temporalContext?: {
     stepNumber: number;
@@ -63,7 +66,11 @@ export default memo(function ProgressBar({
     if (planInfo?.hasPlan) {
       // If we have a plan, use plan-based step calculation
       if (planInfo.totalStepsInPlan > 0) {
-        // Plan has been created with specific steps
+        // Use the calculated current plan step if available
+        if (planInfo.currentPlanStep !== undefined) {
+          return planInfo.currentPlanStep;
+        }
+        // Fallback: Plan has been created with specific steps
         if (temporalContext?.stepNumber !== undefined) {
           // During planning phase (step 0), show as step 1 of plan
           // During execution, show actual step progress
@@ -347,6 +354,11 @@ export default memo(function ProgressBar({
               <div>
                 <h4 className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   📋 Execution Plan ({planInfo.totalStepsInPlan} steps)
+                  {planInfo.currentPlanStep !== undefined && (
+                    <span className={`ml-2 text-xs ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      - Currently on step {planInfo.currentPlanStep}
+                    </span>
+                  )}
                 </h4>
                 <div className="space-y-1">
                   <div className={`text-xs ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>
@@ -357,6 +369,12 @@ export default memo(function ProgressBar({
                       {index + 2}. {step}
                     </div>
                   ))}
+                  {planInfo.stepsSincePlanCreated !== undefined && planInfo.planCreatedAtStep !== undefined && (
+                    <div
+                      className={`text-xs mt-2 pt-2 border-t ${isDarkMode ? 'text-gray-500 border-gray-600' : 'text-gray-400 border-gray-300'}`}>
+                      Plan created at step {planInfo.planCreatedAtStep}, {planInfo.stepsSincePlanCreated} steps ago
+                    </div>
+                  )}
                 </div>
               </div>
             )}

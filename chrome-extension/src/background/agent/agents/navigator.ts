@@ -94,6 +94,9 @@ interface NavigatorDetails {
     nextStep: string;
     upcomingSteps: string[];
     totalStepsInPlan: number;
+    currentPlanStep: number;
+    planCreatedAtStep: number;
+    stepsSincePlanCreated: number;
   };
   actionAnalysis: string;
   temporalContext: {
@@ -342,7 +345,11 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
    * Create comprehensive navigator details for enhanced output
    */
   private createEnhancedNavigatorDetails(
-    taskInfo: TaskInformation,
+    taskInfo: TaskInformation & {
+      planCreatedAtStep: number;
+      stepsSincePlanCreated: number;
+      currentPlanStep: number;
+    },
     browserState: EnhancedBrowserState & { interactiveElementsCount: number },
   ): NavigatorDetails {
     const actionAnalysis = this.analyzeCurrentAction(browserState, taskInfo.taskInstruction, taskInfo.nextPlanStep);
@@ -383,6 +390,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         nextStep: taskInfo.nextPlanStep,
         upcomingSteps: taskInfo.planSteps.slice(1, 4), // Show up to 3 upcoming steps
         totalStepsInPlan: taskInfo.planSteps.length,
+        currentPlanStep: taskInfo.currentPlanStep,
+        planCreatedAtStep: taskInfo.planCreatedAtStep,
+        stepsSincePlanCreated: taskInfo.stepsSincePlanCreated,
       },
 
       actionAnalysis,
@@ -713,12 +723,18 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
   /**
    * Extract task instruction and plan information from message history
    */
-  private extractTaskInformation(): TaskInformation {
+  private extractTaskInformation(): TaskInformation & {
+    planCreatedAtStep: number;
+    stepsSincePlanCreated: number;
+    currentPlanStep: number;
+  } {
     const allMessages = this.context.messageManager.getMessages();
     let taskInstruction: string = CONSTANTS.DEFAULT_MESSAGES.TASK_NOT_FOUND;
     let activePlan: string = CONSTANTS.DEFAULT_MESSAGES.PLAN_NOT_FOUND;
     let planSteps: string[] = [];
     let nextPlanStep: string = CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+    let planCreatedAtStep: number = 0;
+    let planMessageIndex: number = -1;
 
     // Find task instruction
     for (const msg of allMessages) {
@@ -732,7 +748,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       }
     }
 
-    // Find latest plan - simplified approach
+    // Find latest plan and its position in message history
     for (let i = allMessages.length - 1; i >= 0; i--) {
       const msg = allMessages[i];
       if (
@@ -741,6 +757,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         msg.content.startsWith(CONSTANTS.PLAN_TAG_START)
       ) {
         activePlan = msg.content;
+        planMessageIndex = i;
 
         // Simple plan extraction - just get the raw plan content
         const planMatch = msg.content.match(CONSTANTS.PLAN_TAG_REGEX);
@@ -784,6 +801,38 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       }
     }
 
-    return { taskInstruction, activePlan, planSteps, nextPlanStep };
+    // Calculate when the plan was created and current progress within that plan
+    if (planMessageIndex >= 0) {
+      // Estimate the step when the plan was created based on message history
+      // Plans are typically created every planningInterval steps
+      const messagesBeforePlan = planMessageIndex;
+      // Rough estimation: each planning cycle adds ~2-3 messages (state + plan)
+      planCreatedAtStep = Math.floor(messagesBeforePlan / 3) * this.context.options.planningInterval;
+    }
+
+    const stepsSincePlanCreated = Math.max(0, this.context.nSteps - planCreatedAtStep);
+
+    // Calculate current step within the plan
+    // If we have plan steps, determine which step we're currently on
+    let currentPlanStep = 1;
+    if (planSteps.length > 0) {
+      // Each plan step might take multiple Navigator steps to complete
+      // Use a simple heuristic: assume each plan step takes 1-2 Navigator steps
+      const stepsPerPlanStep = Math.max(
+        1,
+        Math.floor(this.context.options.planningInterval / Math.max(1, planSteps.length)),
+      );
+      currentPlanStep = Math.min(planSteps.length, Math.floor(stepsSincePlanCreated / stepsPerPlanStep) + 1);
+    }
+
+    return {
+      taskInstruction,
+      activePlan,
+      planSteps,
+      nextPlanStep,
+      planCreatedAtStep,
+      stepsSincePlanCreated,
+      currentPlanStep,
+    };
   }
 }
