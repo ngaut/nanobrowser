@@ -226,7 +226,10 @@ const SidePanel = () => {
         case Actors.NAVIGATOR:
           switch (state) {
             case ExecutionState.STEP_START:
-              displayProgress = true;
+              // Navigator events with enhanced data don't need separate progress messages
+              // since they already contain comprehensive progress information
+              const hasEnhancedData = event.data?.detailsObject?.temporalContext || event.data?.detailsObject?.planInfo;
+              displayProgress = !hasEnhancedData; // Only show basic progress if no enhanced data
               skip = false;
               break;
             case ExecutionState.STEP_OK:
