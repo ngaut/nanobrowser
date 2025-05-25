@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { IoChevronDown, IoChevronUp, IoExpand, IoClose } from 'react-icons/io5';
 
 interface ProgressBarProps {
@@ -108,10 +108,30 @@ export default memo(function ProgressBar({
     setIsScreenshotModalOpen(true);
   };
 
-  const handleModalClose = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleModalClose = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setIsScreenshotModalOpen(false);
   };
+
+  // Handle keyboard events for modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isScreenshotModalOpen) {
+        setIsScreenshotModalOpen(false);
+      }
+    };
+
+    if (isScreenshotModalOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isScreenshotModalOpen]);
 
   return (
     <>
@@ -130,8 +150,8 @@ export default memo(function ProgressBar({
             <img
               src={`data:image/jpeg;base64,${currentPage.screenshot}`}
               alt="Full page screenshot"
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-              onClick={e => e.stopPropagation()}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl cursor-pointer"
+              onClick={handleModalClose}
             />
             <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-3 rounded-b-lg">
               <div className="text-sm font-medium">{pageTitle}</div>
