@@ -486,7 +486,10 @@ window.buildDomTree = (
         );
       }
     } catch (e) {
-      console.warn('Error checking text node visibility:', e);
+      // Silently handle DOM access errors - this can happen with cross-origin content
+      if (debugMode) {
+        console.debug('Could not check text node visibility (DOM access restriction):', e.message);
+      }
       return false;
     }
   }
@@ -1205,7 +1208,14 @@ window.buildDomTree = (
             }
           }
         } catch (e) {
-          console.warn('Unable to access iframe:', e);
+          // Cross-origin iframes cannot be accessed due to security restrictions - this is expected
+          // Only log in debug mode to avoid console spam from ads/embedded content
+          if (debugMode) {
+            console.debug(
+              'Skipping cross-origin iframe (security restriction):',
+              node.src || node.getAttribute('src') || 'unknown src',
+            );
+          }
         }
       }
       // Handle rich text editors and contenteditable elements
