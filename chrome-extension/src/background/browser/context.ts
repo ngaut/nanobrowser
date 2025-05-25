@@ -55,9 +55,39 @@ export default class BrowserContext {
   public async cleanup(): Promise<void> {
     const currentPage = await this.getCurrentPage();
     currentPage?.removeHighlight();
-    // detach all pages
+
+    // Get all current tab IDs to identify stale references
+    const currentTabIds = await this.getAllTabIds();
+
+    // Remove stale page references
+    const staleTabIds: number[] = [];
+    for (const tabId of this._attachedPages.keys()) {
+      if (!currentTabIds.has(tabId)) {
+        staleTabIds.push(tabId);
+      }
+    }
+
+    // Clean up stale references
+    for (const staleTabId of staleTabIds) {
+      logger.info(`Cleaning up stale page reference for tab ${staleTabId}`);
+      const stalePage = this._attachedPages.get(staleTabId);
+      if (stalePage) {
+        try {
+          await stalePage.detachPuppeteer();
+        } catch (error) {
+          logger.warning(`Error detaching stale page ${staleTabId}:`, error);
+        }
+      }
+      this._attachedPages.delete(staleTabId);
+    }
+
+    // detach all remaining pages
     for (const page of this._attachedPages.values()) {
-      await page.detachPuppeteer();
+      try {
+        await page.detachPuppeteer();
+      } catch (error) {
+        logger.warning('Error during page cleanup:', error);
+      }
     }
     this._attachedPages.clear();
     this._currentTabId = null;
@@ -89,7 +119,12 @@ export default class BrowserContext {
     }
   }
 
-  public async getCurrentPage(): Promise<Page> {
+  public async getCurrentPage(recursionDepth = 0): Promise<Page> {
+    // Prevent infinite recursion
+    if (recursionDepth > 3) {
+      throw new Error('Maximum recursion depth exceeded while getting current page. Unable to find valid tab.');
+    }
+
     // 1. If _currentTabId not set, query the active tab and attach it
     if (!this._currentTabId) {
       let activeTab: chrome.tabs.Tab;
@@ -115,11 +150,19 @@ export default class BrowserContext {
     // 2. If _currentTabId is set but not in attachedPages, attach the tab
     const existingPage = this._attachedPages.get(this._currentTabId);
     if (!existingPage) {
-      const tab = await chrome.tabs.get(this._currentTabId);
-      const page = await this._getOrCreatePage(tab);
-      // set current tab id to null if the page is not attached successfully
-      await this.attachPage(page);
-      return page;
+      try {
+        const tab = await chrome.tabs.get(this._currentTabId);
+        const page = await this._getOrCreatePage(tab);
+        // set current tab id to null if the page is not attached successfully
+        await this.attachPage(page);
+        return page;
+      } catch (error) {
+        logger.warning(`Current tab ${this._currentTabId} is no longer valid:`, error);
+        // Clean up invalid tab reference
+        this._attachedPages.delete(this._currentTabId);
+        this._currentTabId = null;
+        return this.getCurrentPage(recursionDepth + 1); // Recursive call with depth tracking
+      }
     }
 
     // 3. Return existing page from attachedPages
@@ -152,6 +195,7 @@ export default class BrowserContext {
     const { waitForUpdate = true, waitForActivation = true, timeoutMs = 5000 } = options;
 
     const promises: Promise<void>[] = [];
+    const cleanupFunctions: (() => void)[] = [];
 
     if (waitForUpdate) {
       const updatePromise = new Promise<void>(resolve => {
@@ -168,23 +212,33 @@ export default class BrowserContext {
 
           // Resolve when we have all the information we need
           if (hasUrl && hasTitle && isComplete) {
-            chrome.tabs.onUpdated.removeListener(onUpdatedHandler);
             resolve();
           }
         };
+
         chrome.tabs.onUpdated.addListener(onUpdatedHandler);
 
-        // Check current state
-        chrome.tabs.get(tabId).then(tab => {
-          if (tab.url) hasUrl = true;
-          if (tab.title) hasTitle = true;
-          if (tab.status === 'complete') isComplete = true;
-
-          if (hasUrl && hasTitle && isComplete) {
-            chrome.tabs.onUpdated.removeListener(onUpdatedHandler);
-            resolve();
-          }
+        // Store cleanup function
+        cleanupFunctions.push(() => {
+          chrome.tabs.onUpdated.removeListener(onUpdatedHandler);
         });
+
+        // Check current state
+        chrome.tabs
+          .get(tabId)
+          .then(tab => {
+            if (tab.url) hasUrl = true;
+            if (tab.title) hasTitle = true;
+            if (tab.status === 'complete') isComplete = true;
+
+            if (hasUrl && hasTitle && isComplete) {
+              resolve();
+            }
+          })
+          .catch(error => {
+            logger.warning(`Tab ${tabId} is no longer valid during waitForTabEvents:`, error);
+            resolve(); // Resolve anyway to avoid hanging
+          });
       });
       promises.push(updatePromise);
     }
@@ -193,19 +247,29 @@ export default class BrowserContext {
       const activatedPromise = new Promise<void>(resolve => {
         const onActivatedHandler = (activeInfo: chrome.tabs.TabActiveInfo) => {
           if (activeInfo.tabId === tabId) {
-            chrome.tabs.onActivated.removeListener(onActivatedHandler);
             resolve();
           }
         };
+
         chrome.tabs.onActivated.addListener(onActivatedHandler);
 
-        // Check current state
-        chrome.tabs.get(tabId).then(tab => {
-          if (tab.active) {
-            chrome.tabs.onActivated.removeListener(onActivatedHandler);
-            resolve();
-          }
+        // Store cleanup function
+        cleanupFunctions.push(() => {
+          chrome.tabs.onActivated.removeListener(onActivatedHandler);
         });
+
+        // Check current state
+        chrome.tabs
+          .get(tabId)
+          .then(tab => {
+            if (tab.active) {
+              resolve();
+            }
+          })
+          .catch(error => {
+            logger.warning(`Tab ${tabId} is no longer valid during activation check:`, error);
+            resolve(); // Resolve anyway to avoid hanging
+          });
       });
       promises.push(activatedPromise);
     }
@@ -214,19 +278,48 @@ export default class BrowserContext {
       setTimeout(() => reject(new Error(`Tab operation timed out after ${timeoutMs} ms`)), timeoutMs),
     );
 
-    await Promise.race([Promise.all(promises), timeoutPromise]);
+    try {
+      await Promise.race([Promise.all(promises), timeoutPromise]);
+    } finally {
+      // Always clean up event listeners, even if we timeout or error
+      cleanupFunctions.forEach(cleanup => {
+        try {
+          cleanup();
+        } catch (error) {
+          logger.warning('Error during event listener cleanup:', error);
+        }
+      });
+    }
   }
 
   public async switchTab(tabId: number): Promise<Page> {
     logger.info('switchTab', tabId);
 
-    await chrome.tabs.update(tabId, { active: true });
-    await this.waitForTabEvents(tabId, { waitForUpdate: false });
+    try {
+      // Validate tab exists first
+      await chrome.tabs.get(tabId);
 
-    const page = await this._getOrCreatePage(await chrome.tabs.get(tabId));
-    await this.attachPage(page);
-    this._currentTabId = tabId;
-    return page;
+      await chrome.tabs.update(tabId, { active: true });
+      await this.waitForTabEvents(tabId, { waitForUpdate: false });
+
+      const tab = await chrome.tabs.get(tabId);
+      const page = await this._getOrCreatePage(tab);
+      await this.attachPage(page);
+      this._currentTabId = tabId;
+      return page;
+    } catch (error) {
+      logger.error(`Failed to switch to tab ${tabId}:`, error);
+
+      // Clean up any stale reference
+      this._attachedPages.delete(tabId);
+      if (this._currentTabId === tabId) {
+        this._currentTabId = null;
+      }
+
+      throw new Error(
+        `Tab ${tabId} is no longer valid or accessible: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   public async navigateTo(url: string): Promise<void> {
@@ -246,14 +339,21 @@ export default class BrowserContext {
     }
     //  Use chrome.tabs.update only if the page is not attached
     const tabId = page.tabId;
-    // Update tab and wait for events
-    await chrome.tabs.update(tabId, { url, active: true });
-    await this.waitForTabEvents(tabId);
 
-    // Reattach the page after navigation completes
-    const updatedPage = await this._getOrCreatePage(await chrome.tabs.get(tabId), true);
-    await this.attachPage(updatedPage);
-    this._currentTabId = tabId;
+    try {
+      // Update tab and wait for events
+      await chrome.tabs.update(tabId, { url, active: true });
+      await this.waitForTabEvents(tabId);
+
+      // Reattach the page after navigation completes
+      const updatedTab = await chrome.tabs.get(tabId);
+      const updatedPage = await this._getOrCreatePage(updatedTab, true);
+      await this.attachPage(updatedPage);
+      this._currentTabId = tabId;
+    } catch (error) {
+      logger.error(`Failed to navigate tab ${tabId} to ${url}:`, error);
+      throw new Error(`Navigation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   public async openTab(url: string): Promise<Page> {
@@ -261,22 +361,27 @@ export default class BrowserContext {
       throw new URLNotAllowedError(`Open tab failed. URL: ${url} is not allowed`);
     }
 
-    // Create the new tab
-    const tab = await chrome.tabs.create({ url, active: true });
-    if (!tab.id) {
-      throw new Error('No tab ID available');
+    try {
+      // Create the new tab
+      const tab = await chrome.tabs.create({ url, active: true });
+      if (!tab.id) {
+        throw new Error('No tab ID available');
+      }
+      // Wait for tab events
+      await this.waitForTabEvents(tab.id);
+
+      // Get updated tab information
+      const updatedTab = await chrome.tabs.get(tab.id);
+      // Create and attach the page after tab is fully loaded and activated
+      const page = await this._getOrCreatePage(updatedTab);
+      await this.attachPage(page);
+      this._currentTabId = tab.id;
+
+      return page;
+    } catch (error) {
+      logger.error(`Failed to open tab with URL ${url}:`, error);
+      throw new Error(`Failed to open tab: ${error instanceof Error ? error.message : String(error)}`);
     }
-    // Wait for tab events
-    await this.waitForTabEvents(tab.id);
-
-    // Get updated tab information
-    const updatedTab = await chrome.tabs.get(tab.id);
-    // Create and attach the page after tab is fully loaded and activated
-    const page = await this._getOrCreatePage(updatedTab);
-    await this.attachPage(page);
-    this._currentTabId = tab.id;
-
-    return page;
   }
 
   public async closeTab(tabId: number): Promise<void> {

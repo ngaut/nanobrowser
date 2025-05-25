@@ -37,6 +37,8 @@ export const plannerOutputSchema = z.object({
       throw new Error('Invalid boolean string');
     }),
   ]),
+  observationDataSource_urls: z.array(z.string().url()).optional(),
+  observationDataSource_descriptions: z.array(z.string()).optional(),
 });
 
 export type PlannerOutput = z.infer<typeof plannerOutputSchema>;
@@ -48,44 +50,45 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
   async execute(): Promise<AgentOutput<PlannerOutput>> {
     try {
-      const messagesForPlannerInput = this.context.messageManager.getMessages();
-      let taskInstruction = 'Task instruction not found.';
-      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
-      for (const msg of messagesForPlannerInput) {
-        if (
-          msg instanceof HumanMessage &&
-          typeof msg.content === 'string' &&
-          msg.content.startsWith(taskInstructionPrefix)
-        ) {
-          taskInstruction = msg.content;
-          break;
-        }
-      }
+      // Get current page information from shared context
+      const currentPageInfo = await this.context.getCurrentPageInfo();
 
-      const recentHistoryRaw = messagesForPlannerInput.slice(-5); // Get last 5 messages
+      const messagesForPlannerInput = this.context.messageManager.getMessages();
+
+      // Simple recent history for context (no complex parsing)
+      const recentHistoryRaw = messagesForPlannerInput.slice(-5);
       const recentHistory = recentHistoryRaw.map(msg => {
         let actorName = 'Unknown';
         if (msg instanceof HumanMessage) actorName = 'User';
-        else if (msg instanceof AIMessage)
-          actorName = 'AI'; // Or more specific if possible
+        else if (msg instanceof AIMessage) actorName = 'AI';
         else if (msg instanceof SystemMessage) actorName = 'System';
-        // Add other message types if necessary
         return `${actorName}: ${typeof msg.content === 'string' ? msg.content.substring(0, 150) + (msg.content.length > 150 ? '...' : '') : '[Non-string content]'}`;
       });
 
       const plannerInputDetails = {
         status: 'planning',
         step: this.context.nSteps,
+
+        // Include current page information for better planning context
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+
         inputs: {
-          taskInstruction,
           recentHistory,
+          pageContext: `Currently on: "${currentPageInfo.title}" (${currentPageInfo.url})`,
         },
       };
+
       this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...', undefined, plannerInputDetails);
-      // get all messages from the message manager, state message should be the last one
-      const messages = this.context.messageManager.getMessages();
-      // Use full message history except the first one
-      const plannerMessages = [this.prompt.getSystemMessage(), ...messages.slice(1)];
+
+      // Get current browser state so planner can see what's actually on the page
+      const currentState = await this.prompt.getUserMessage(this.context);
+
+      // Build planner messages with current browser state
+      const plannerMessages = [this.prompt.getSystemMessage(), ...messagesForPlannerInput.slice(1), currentState];
 
       // Remove images from last message if vision is not enabled for planner but vision is enabled
       if (!this.context.options.useVisionForPlanner && this.context.options.useVision) {

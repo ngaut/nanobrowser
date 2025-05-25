@@ -47,6 +47,14 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
   planningInterval: 3,
 };
 
+// Current page information interface for sharing across agents
+export interface CurrentPageInfo {
+  title: string;
+  url: string;
+  tabId: number;
+  lastUpdated: string;
+}
+
 export class AgentContext {
   controller: AbortController;
   taskId: string;
@@ -62,6 +70,10 @@ export class AgentContext {
   stepInfo: AgentStepInfo | null;
   actionResults: ActionResult[];
   stateMessageAdded: boolean;
+
+  // Shared current page information for all agents
+  currentPage: CurrentPageInfo | null;
+
   constructor(
     taskId: string,
     browserContext: BrowserContext,
@@ -84,6 +96,43 @@ export class AgentContext {
     this.stepInfo = null;
     this.actionResults = [];
     this.stateMessageAdded = false;
+    this.currentPage = null;
+  }
+
+  /**
+   * Update the current page information in the context
+   * This should be called whenever page navigation or updates occur
+   */
+  async updateCurrentPageInfo(): Promise<void> {
+    try {
+      const browserState = await this.browserContext.getState(false, false);
+      this.currentPage = {
+        title: browserState.title || 'Unknown Page',
+        url: browserState.url || 'Unknown URL',
+        tabId: browserState.tabId,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.warn('Failed to update current page info:', error);
+      // Keep existing page info if update fails
+    }
+  }
+
+  /**
+   * Get current page information, updating it if not available or stale
+   */
+  async getCurrentPageInfo(): Promise<CurrentPageInfo> {
+    if (!this.currentPage) {
+      await this.updateCurrentPageInfo();
+    }
+    return (
+      this.currentPage || {
+        title: 'Unknown Page',
+        url: 'Unknown URL',
+        tabId: -1,
+        lastUpdated: new Date().toISOString(),
+      }
+    );
   }
 
   async emitEvent(
@@ -137,6 +186,7 @@ interface ActionResultParams {
   extractedContent?: string | null;
   error?: string | null;
   includeInMemory?: boolean;
+  sourceURL?: string;
 }
 
 export class ActionResult {
@@ -144,12 +194,14 @@ export class ActionResult {
   extractedContent: string | null;
   error: string | null;
   includeInMemory: boolean;
+  sourceURL: string | null;
 
   constructor(params: ActionResultParams = {}) {
     this.isDone = params.isDone ?? false;
     this.extractedContent = params.extractedContent ?? null;
     this.error = params.error ?? null;
     this.includeInMemory = params.includeInMemory ?? false;
+    this.sourceURL = params.sourceURL ?? null;
   }
 }
 

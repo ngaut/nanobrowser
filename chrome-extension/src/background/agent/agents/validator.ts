@@ -31,6 +31,13 @@ export const validatorOutputSchema = z.object({
 
 export type ValidatorOutput = z.infer<typeof validatorOutputSchema>;
 
+interface SourceInfo {
+  type: 'url' | 'action_result' | 'message_history';
+  identifier: string;
+  stepId?: string; // Optional: could reference a specific agent step
+  contentSnippet?: string; // Optional: a snippet of the source content
+}
+
 export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, ValidatorOutput> {
   // sometimes we need to validate the output against both the current browser state and the plan
   private plan: string | null = null;
@@ -51,55 +58,49 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
    * @returns AgentOutput<ValidatorOutput>
    */
   async execute(): Promise<AgentOutput<ValidatorOutput>> {
+    let sourceForValidation: SourceInfo | undefined = undefined;
+    let dataToValidate = 'Data to validate not found.';
+
     try {
-      const allMessages = this.context.messageManager.getMessages();
-      let taskInstruction = 'Task instruction not found.';
-      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
-      for (const msg of allMessages) {
-        if (
-          msg instanceof HumanMessage &&
-          typeof msg.content === 'string' &&
-          msg.content.startsWith(taskInstructionPrefix)
-        ) {
-          taskInstruction = msg.content;
-          break;
-        }
-      }
+      // Get current page information from shared context
+      const currentPageInfo = await this.context.getCurrentPageInfo();
 
-      let originalPlan = 'Original plan not found.';
-      for (let i = allMessages.length - 1; i >= 0; i--) {
-        const msg = allMessages[i];
-        if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
-          originalPlan = msg.content;
-          break;
+      // Get action results for validation (simplified approach)
+      if (this.context.actionResults && this.context.actionResults.length > 0) {
+        for (let i = this.context.actionResults.length - 1; i >= 0; i--) {
+          const result = this.context.actionResults[i];
+          if (result.extractedContent && !result.error) {
+            dataToValidate = result.extractedContent;
+            if (result.sourceURL) {
+              sourceForValidation = {
+                type: 'action_result',
+                identifier: result.sourceURL,
+                contentSnippet: result.extractedContent.substring(0, 200),
+              };
+            }
+            break;
+          }
         }
-      }
-
-      let dataToValidate = 'Data to validate not found (e.g., last Navigator output).';
-      // Find the latest Navigator output to validate.
-      // This is also a heuristic. Ideally, we'd identify specific Navigator STEP_OK/ACT_OK messages.
-      for (let i = allMessages.length - 1; i >= 0; i--) {
-        const msg = allMessages[i];
-        if (
-          msg instanceof HumanMessage &&
-          typeof msg.content === 'string' &&
-          msg.content.startsWith('Action result:')
-        ) {
-          dataToValidate = msg.content;
-          break;
-        }
-        // Could also look for AIMessages from Navigator if they represent its final output for a step.
       }
 
       const validatorInputDetails = {
         status: 'validating',
         step: this.context.nSteps,
+
+        // Include current page information for validation context
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+
         inputs: {
-          taskInstruction,
-          originalPlan,
           dataToValidate,
+          sourceURL: sourceForValidation?.type === 'action_result' ? sourceForValidation.identifier : undefined,
+          pageContext: `Validating on: "${currentPageInfo.title}" (${currentPageInfo.url})`,
         },
       };
+
       this.context.emitEvent(
         Actors.VALIDATOR,
         ExecutionState.STEP_START,
@@ -110,11 +111,9 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
 
       let stateMessage = await this.prompt.getUserMessage(this.context);
       if (this.plan) {
-        // merge the plan and the state message
         const mergedMessage = new HumanMessage(`${stateMessage.content}\n\nThe current plan is: \n${this.plan}`);
         stateMessage = mergedMessage;
       }
-      // logger.info('validator input', stateMessage);
 
       const systemMessage = this.prompt.getSystemMessage();
       const inputMessages = [systemMessage, stateMessage];
@@ -126,23 +125,37 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
 
       logger.info('validator output', JSON.stringify(modelOutput, null, 2));
 
+      const sourcesArray = sourceForValidation ? [sourceForValidation] : [];
+
       if (!modelOutput.is_valid) {
-        // need to update the action results so that other agents can see the error
         const msg = `The answer is not yet correct. ${modelOutput.reason}.`;
-        const validationFailDetails = {
-          is_valid: modelOutput.is_valid,
+        const validationFailOutput = {
+          isValid: modelOutput.is_valid,
           reason: modelOutput.reason,
-          answer: modelOutput.answer,
+          answerAttempt: modelOutput.answer,
+          sources: sourcesArray,
         };
-        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg, undefined, validationFailDetails);
-        this.context.actionResults = [new ActionResult({ extractedContent: msg, includeInMemory: true })];
+        this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, msg, undefined, validationFailOutput);
+        this.context.actionResults = [
+          new ActionResult({
+            extractedContent: msg,
+            includeInMemory: true,
+            sourceURL: sourceForValidation?.identifier,
+          }),
+        ];
       } else {
+        const validationSuccessOutput = {
+          isValid: modelOutput.is_valid,
+          reason: modelOutput.reason,
+          validatedAnswer: modelOutput.answer,
+          sources: sourcesArray,
+        };
         this.context.emitEvent(
           Actors.VALIDATOR,
           ExecutionState.STEP_OK,
           `Validation successful: ${modelOutput.answer}`,
           undefined,
-          modelOutput.answer,
+          validationSuccessOutput,
         );
       }
 
@@ -163,10 +176,19 @@ export class ValidatorAgent extends BaseAgent<typeof validatorOutputSchema, Vali
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`Validation failed: ${errorMessage}`);
-      this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, `Validation failed: ${errorMessage}`, {
+      // For system/unexpected errors, the output structure might be simpler
+      const systemFailOutput = {
         error: errorMessage,
         errorStack: error instanceof Error ? error.stack : undefined,
-      });
+        sources: sourceForValidation ? [sourceForValidation] : [], // Include source if available even on system error
+      };
+      this.context.emitEvent(
+        Actors.VALIDATOR,
+        ExecutionState.STEP_FAIL,
+        `Validation failed: ${errorMessage}`,
+        undefined,
+        systemFailOutput,
+      );
       return {
         id: this.id,
         error: `Validation failed: ${errorMessage}`,

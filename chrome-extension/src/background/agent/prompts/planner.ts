@@ -10,6 +10,6 @@ export class PlannerPrompt extends BasePrompt {
   }
 
   async getUserMessage(context: AgentContext): Promise<HumanMessage> {
-    return new HumanMessage('');
+    return await this.buildBrowserStateUserMessage(context);
   }
 }

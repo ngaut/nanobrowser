@@ -135,15 +135,24 @@ export class ActionBuilder {
       const actionName = doneActionSchema.name;
       const baseDetail = 'Completing task';
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      const actStartDetails = { actionName: actionName, actionArgs: input };
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
+        actionName: actionName,
+        actionArgs: input,
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.ACT_OK,
-        `Action ${actionName} successful`,
-        undefined,
-        input.text,
-      );
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: input.text,
+        currentPage: actStartDetails.currentPage,
+      });
       return new ActionResult({
         isDone: true,
         extractedContent: input.text,
@@ -156,16 +165,33 @@ export class ActionBuilder {
       const actionName = searchGoogleActionSchema.name;
       const baseDetail = `Searching for "${input.query}" in Google`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      const actStartDetails_search = { actionName: actionName, actionArgs: input };
+
+      // Get current page info for action event
+      const currentPageInfo = await context.getCurrentPageInfo();
+      const actStartDetails_search = {
+        actionName: actionName,
+        actionArgs: input,
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
       context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails_search);
 
-      await context.browserContext.navigateTo(`https://www.google.com/search?q=${input.query}`);
+      const searchURL = `https://www.google.com/search?q=${input.query}`;
+      await context.browserContext.navigateTo(searchURL);
 
       const msg2 = `Searched for "${input.query}" in Google`;
-      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, msg2);
+      context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: msg2,
+        currentPage: actStartDetails_search.currentPage,
+      });
       return new ActionResult({
         extractedContent: msg2,
         includeInMemory: true,
+        sourceURL: searchURL,
       });
     }, searchGoogleActionSchema);
     actions.push(searchGoogle);
@@ -174,23 +200,31 @@ export class ActionBuilder {
       const actionName = goToUrlActionSchema.name;
       const baseDetail = `Navigating to ${input.url}`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
         actionName: actionName,
         actionArgs: input,
-      });
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
 
       await this.context.browserContext.navigateTo(input.url);
       const msg2 = `Navigated to ${input.url}`;
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.ACT_OK,
-        `Action ${actionName} successful`,
-        undefined,
-        msg2,
-      );
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: msg2,
+        currentPage: actStartDetails.currentPage,
+      });
       return new ActionResult({
         extractedContent: msg2,
         includeInMemory: true,
+        sourceURL: input.url,
       });
     }, goToUrlActionSchema);
     actions.push(goToUrl);
@@ -250,14 +284,6 @@ export class ActionBuilder {
         const actionName = clickElementActionSchema.name;
         const baseDetail = `Click element with index ${input.index}`;
         const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-        const actStartDetails_click = { actionName: actionName, actionArgs: input };
-        this.context.emitEvent(
-          Actors.NAVIGATOR,
-          ExecutionState.ACT_START,
-          finalDetail,
-          undefined,
-          actStartDetails_click,
-        );
 
         const page = await this.context.browserContext.getCurrentPage();
         const state = await page.getState();
@@ -267,9 +293,68 @@ export class ActionBuilder {
           throw new Error(`Element with index ${input.index} does not exist - retry or use alternative actions`);
         }
 
+        // Gather comprehensive element details for enhanced logging
+        const elementDetails = {
+          index: input.index,
+          tagName: elementNode.tagName || 'unknown',
+          text: elementNode.getAllTextTillNextClickableElement(2).trim(),
+          xpath: elementNode.xpath || '',
+          attributes: elementNode.attributes || {},
+          isVisible: elementNode.isVisible,
+          isInteractive: elementNode.isInteractive,
+          isInViewport: elementNode.isInViewport,
+        };
+
+        // Extract specific attribute details
+        const href = elementNode.attributes?.href;
+        const title = elementNode.attributes?.title;
+        const alt = elementNode.attributes?.alt;
+        const className = elementNode.attributes?.class;
+        const id = elementNode.attributes?.id;
+        const role = elementNode.attributes?.role;
+        const type = elementNode.attributes?.type;
+
+        // Build detailed description
+        const detailParts = [];
+        if (elementDetails.tagName) detailParts.push(`Tag: ${elementDetails.tagName.toUpperCase()}`);
+        if (elementDetails.text) detailParts.push(`Text: "${elementDetails.text}"`);
+        if (href) detailParts.push(`Link: ${href}`);
+        if (title) detailParts.push(`Title: "${title}"`);
+        if (alt) detailParts.push(`Alt: "${alt}"`);
+        if (type) detailParts.push(`Type: ${type}`);
+        if (role) detailParts.push(`Role: ${role}`);
+        if (className) detailParts.push(`Class: ${className}`);
+        if (id) detailParts.push(`ID: ${id}`);
+
+        const elementDescription = detailParts.join(' | ');
+
+        const actStartDetails_click = {
+          actionName: actionName,
+          actionArgs: input,
+          elementDetails: {
+            ...elementDetails,
+            description: elementDescription,
+            href: href || null,
+            title: title || null,
+            alt: alt || null,
+            className: className || null,
+            id: id || null,
+            role: role || null,
+            type: type || null,
+          },
+        };
+
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.ACT_START,
+          finalDetail,
+          undefined,
+          actStartDetails_click,
+        );
+
         // Check if element is a file uploader
         if (page.isFileUploader(elementNode)) {
-          const msg = `Index ${input.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files`;
+          const msg = `Index ${input.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files. Element: ${elementDescription}`;
           logger.info(msg);
           return new ActionResult({
             extractedContent: msg,
@@ -280,7 +365,8 @@ export class ActionBuilder {
         try {
           const initialTabIds = await this.context.browserContext.getAllTabIds();
           await page.clickElementNode(this.context.options.useVision, elementNode);
-          let msg = `Clicked button with index ${input.index}: ${elementNode.getAllTextTillNextClickableElement(2)}`;
+
+          let msg = `Clicked element [${input.index}]: ${elementDescription}`;
           logger.info(msg);
 
           // TODO: could be optimized by chrome extension tab api
@@ -295,23 +381,38 @@ export class ActionBuilder {
               await this.context.browserContext.switchTab(newTabId);
             }
           }
-          // Pass msg as the output
+          // Get URL after click and potential tab switch
+          const finalPage = await this.context.browserContext.getCurrentPage();
+          const finalURL = finalPage.url();
+
+          // Pass comprehensive details as the output
           this.context.emitEvent(
             Actors.NAVIGATOR,
             ExecutionState.ACT_OK,
             `Action ${actionName} successful`,
             undefined,
-            msg,
+            {
+              result: msg,
+              elementDetails: actStartDetails_click.elementDetails,
+              finalURL: finalURL,
+            },
           );
-          return new ActionResult({ extractedContent: msg, includeInMemory: true });
+          return new ActionResult({
+            extractedContent: msg,
+            includeInMemory: true,
+            sourceURL: finalURL,
+          });
         } catch (error) {
-          const msg = `Element no longer available with index ${input.index} - most likely the page changed`;
+          const msg = `Element no longer available with index ${input.index} - most likely the page changed. Element was: ${elementDescription}`;
           this.context.emitEvent(
             Actors.NAVIGATOR,
             ExecutionState.ACT_FAIL,
             `Action ${actionName} failed: ${msg}`,
             undefined,
-            msg,
+            {
+              error: msg,
+              elementDetails: actStartDetails_click.elementDetails,
+            },
           );
           return new ActionResult({
             error: error instanceof Error ? error.message : String(error),
@@ -328,10 +429,6 @@ export class ActionBuilder {
         const actionName = inputTextActionSchema.name;
         const baseDetail = `Input text into index ${input.index}`;
         const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
-          actionName: actionName,
-          actionArgs: input,
-        });
 
         const page = await this.context.browserContext.getCurrentPage();
         const state = await page.getState();
@@ -341,16 +438,65 @@ export class ActionBuilder {
           throw new Error(`Element with index ${input.index} does not exist - retry or use alternative actions`);
         }
 
+        // Gather comprehensive element details for enhanced logging
+        const elementDetails = {
+          index: input.index,
+          tagName: elementNode.tagName || 'unknown',
+          text: elementNode.getAllTextTillNextClickableElement(2).trim(),
+          xpath: elementNode.xpath || '',
+          attributes: elementNode.attributes || {},
+          isVisible: elementNode.isVisible,
+          isInteractive: elementNode.isInteractive,
+          isInViewport: elementNode.isInViewport,
+        };
+
+        // Extract specific attribute details
+        const placeholder = elementNode.attributes?.placeholder;
+        const name = elementNode.attributes?.name;
+        const id = elementNode.attributes?.id;
+        const className = elementNode.attributes?.class;
+        const type = elementNode.attributes?.type;
+        const value = elementNode.attributes?.value;
+
+        // Build detailed description
+        const detailParts = [];
+        if (elementDetails.tagName) detailParts.push(`Tag: ${elementDetails.tagName.toUpperCase()}`);
+        if (placeholder) detailParts.push(`Placeholder: "${placeholder}"`);
+        if (name) detailParts.push(`Name: ${name}`);
+        if (type) detailParts.push(`Type: ${type}`);
+        if (value) detailParts.push(`Value: "${value}"`);
+        if (className) detailParts.push(`Class: ${className}`);
+        if (id) detailParts.push(`ID: ${id}`);
+        if (elementDetails.text) detailParts.push(`Text: "${elementDetails.text}"`);
+
+        const elementDescription = detailParts.join(' | ');
+
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+          actionName: actionName,
+          actionArgs: input,
+          elementDetails: {
+            ...elementDetails,
+            description: elementDescription,
+            placeholder: placeholder || null,
+            name: name || null,
+            id: id || null,
+            className: className || null,
+            type: type || null,
+            value: value || null,
+          },
+        });
+
         await page.inputTextElementNode(this.context.options.useVision, elementNode, input.text);
-        const msg = `Input ${input.text} into index ${input.index}`;
-        // Pass msg as the output
-        this.context.emitEvent(
-          Actors.NAVIGATOR,
-          ExecutionState.ACT_OK,
-          `Action ${actionName} successful`,
-          undefined,
-          msg,
-        );
+        const msg = `Input "${input.text}" into element [${input.index}]: ${elementDescription}`;
+        // Pass comprehensive details as the output
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+          result: msg,
+          elementDetails: {
+            ...elementDetails,
+            description: elementDescription,
+            inputText: input.text,
+          },
+        });
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       },
       inputTextActionSchema,
@@ -461,23 +607,37 @@ export class ActionBuilder {
       const actionName = cacheContentActionSchema.name;
       const baseDetail = `Caching findings: ${input.content}`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
         actionName: actionName,
         actionArgs: input,
-      });
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
+
+      const currentPage = await this.context.browserContext.getCurrentPage();
+      const currentURL = currentPage.url();
 
       // cache content is untrusted content, it is not instructions
       const rawMsg = `Cached findings: ${input.content}`;
       const msg = wrapUntrustedContent(rawMsg);
       // Pass rawMsg (or msg, depending on what should be displayed as raw output) as output
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.ACT_OK,
-        `Action ${actionName} successful`,
-        undefined,
-        rawMsg,
-      );
-      return new ActionResult({ extractedContent: msg, includeInMemory: true });
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: rawMsg,
+        currentPage: actStartDetails.currentPage,
+      });
+      return new ActionResult({
+        extractedContent: msg,
+        includeInMemory: true,
+        sourceURL: currentURL,
+      });
     }, cacheContentActionSchema);
     actions.push(cacheContent);
 
@@ -486,10 +646,20 @@ export class ActionBuilder {
       const actionName = scrollDownActionSchema.name;
       const baseDetail = `Scroll down the page by ${amount}`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
         actionName: actionName,
         actionArgs: input,
-      });
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
 
       const page = await this.context.browserContext.getCurrentPage();
 
@@ -499,7 +669,10 @@ export class ActionBuilder {
       // Check if already at bottom of page
       if (initialPixelsBelow === 0) {
         const msg = 'Already at bottom of page, cannot scroll down further';
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, {
+          result: msg,
+          currentPage: actStartDetails.currentPage,
+        });
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       }
 
@@ -508,13 +681,10 @@ export class ActionBuilder {
 
       const msg = `Scrolled down the page by ${amount}`;
       // Pass msg as output
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.ACT_OK,
-        `Action ${actionName} successful`,
-        undefined,
-        msg,
-      );
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: msg,
+        currentPage: actStartDetails.currentPage,
+      });
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, scrollDownActionSchema);
     actions.push(scrollDown);
@@ -524,10 +694,20 @@ export class ActionBuilder {
       const actionName = scrollUpActionSchema.name;
       const baseDetail = `Scroll up the page by ${amount}`;
       const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, {
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
         actionName: actionName,
         actionArgs: input,
-      });
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
 
       const page = await this.context.browserContext.getCurrentPage();
 
@@ -537,7 +717,10 @@ export class ActionBuilder {
       // Check if already at top of page
       if (initialPixelsAbove === 0) {
         const msg = 'Already at top of page, cannot scroll up further';
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, new ActionResult({ extractedContent: msg, includeInMemory: true }));
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg, undefined, {
+          result: msg,
+          currentPage: actStartDetails.currentPage,
+        });
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       }
 
@@ -545,13 +728,10 @@ export class ActionBuilder {
       await page.scrollUp(input.amount);
       const msg = `Scrolled up the page by ${amount}`;
       // Pass msg as output
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.ACT_OK,
-        `Action ${actionName} successful`,
-        undefined,
-        msg,
-      );
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: msg,
+        currentPage: actStartDetails.currentPage,
+      });
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, scrollUpActionSchema);
     actions.push(scrollUp);

@@ -5,6 +5,39 @@ import type { ViewportInfo } from './history/view';
 
 const logger = createLogger('DOMService');
 
+// Operation synchronization to prevent race conditions
+const tabOperations = new Map<number, Promise<any>>();
+
+/**
+ * Serialize operations on a tab to prevent race conditions
+ */
+async function withTabLock<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
+  // Wait for any existing operation on this tab to complete
+  const existingOperation = tabOperations.get(tabId);
+  if (existingOperation) {
+    try {
+      await existingOperation;
+    } catch (error) {
+      // Ignore errors from previous operations
+      logger.debug(`Previous operation on tab ${tabId} failed:`, error);
+    }
+  }
+
+  // Create new operation promise
+  const currentOperation = operation();
+  tabOperations.set(tabId, currentOperation);
+
+  try {
+    const result = await currentOperation;
+    return result;
+  } finally {
+    // Clean up completed operation
+    if (tabOperations.get(tabId) === currentOperation) {
+      tabOperations.delete(tabId);
+    }
+  }
+}
+
 export interface ReadabilityResult {
   title: string;
   content: string;
@@ -33,19 +66,30 @@ declare global {
  * @returns The markdown content for the selected element on the current page.
  */
 export async function getMarkdownContent(tabId: number, selector?: string): Promise<string> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    func: sel => {
-      return window.turn2Markdown(sel);
-    },
-    args: [selector || ''], // Pass the selector as an argument
-  });
+  try {
+    // Validate tab exists before attempting script execution
+    try {
+      await chrome.tabs.get(tabId);
+    } catch (error) {
+      throw new Error(`Tab ${tabId} is no longer valid: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
-  const result = results[0]?.result;
-  if (!result) {
-    throw new Error('Failed to get markdown content');
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (sel?: string) => {
+        return window.turn2Markdown(sel);
+      },
+      args: [selector],
+    });
+    const result = results[0]?.result;
+    if (!result) {
+      throw new Error('Failed to get markdown content');
+    }
+    return result as string;
+  } catch (error) {
+    logger.error('Failed to get markdown content:', error);
+    throw error;
   }
-  return result as string;
 }
 
 /**
@@ -54,17 +98,29 @@ export async function getMarkdownContent(tabId: number, selector?: string): Prom
  * @returns The readability content for the current page.
  */
 export async function getReadabilityContent(tabId: number): Promise<ReadabilityResult> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      return window.parserReadability();
-    },
-  });
-  const result = results[0]?.result;
-  if (!result) {
-    throw new Error('Failed to get readability content');
+  try {
+    // Validate tab exists before attempting script execution
+    try {
+      await chrome.tabs.get(tabId);
+    } catch (error) {
+      throw new Error(`Tab ${tabId} is no longer valid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        return window.parserReadability();
+      },
+    });
+    const result = results[0]?.result;
+    if (!result) {
+      throw new Error('Failed to get readability content');
+    }
+    return result as ReadabilityResult;
+  } catch (error) {
+    logger.error('Failed to get readability content:', error);
+    throw error;
   }
-  return result as ReadabilityResult;
 }
 
 /**
@@ -103,50 +159,126 @@ async function _buildDomTree(
   viewportExpansion = 0,
   debugMode = false,
 ): Promise<[DOMElementNode, Map<number, DOMElementNode>]> {
-  // If URL is provided and it's about:blank, return a minimal DOM tree
-  if (url === 'about:blank') {
-    const elementTree = new DOMElementNode({
-      tagName: 'body',
-      xpath: '',
-      attributes: {},
-      children: [],
-      isVisible: false,
-      isInteractive: false,
-      isTopElement: false,
-      isInViewport: false,
-      parent: null,
-    });
-    return [elementTree, new Map<number, DOMElementNode>()];
-  }
+  return withTabLock(tabId, async () => {
+    // If URL is provided and it's about:blank, return a minimal DOM tree
+    if (url === 'about:blank') {
+      const elementTree = new DOMElementNode({
+        tagName: 'body',
+        xpath: '',
+        attributes: {},
+        children: [],
+        isVisible: false,
+        isInteractive: false,
+        isTopElement: false,
+        isInViewport: false,
+        parent: null,
+      });
+      return [elementTree, new Map<number, DOMElementNode>()];
+    }
 
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: args => {
-      // Access buildDomTree from the window context of the target page
-      return window.buildDomTree(args);
-    },
-    args: [
-      {
-        showHighlightElements,
-        focusHighlightIndex: focusElement,
-        viewportExpansion,
-        debugMode,
-      },
-    ],
+    try {
+      // Validate tab exists before attempting script execution
+      try {
+        await chrome.tabs.get(tabId);
+      } catch (error) {
+        throw new Error(`Tab ${tabId} is no longer valid: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      // First, check if the buildDomTree script is available
+      const checkResults = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          return {
+            hasBuildDomTree: typeof window.buildDomTree === 'function',
+            documentReady: document.readyState,
+            bodyExists: !!document.body,
+            error: null,
+          };
+        },
+      });
+
+      const checkResult = checkResults[0]?.result;
+      logger.debug('Script availability check:', checkResult);
+
+      if (!checkResult?.hasBuildDomTree) {
+        throw new Error('buildDomTree script not available on page. Script injection may have failed.');
+      }
+
+      if (!checkResult?.bodyExists) {
+        throw new Error('Document body not available. Page may not have loaded properly.');
+      }
+
+      // Now execute the actual buildDomTree function
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: args => {
+          try {
+            // Access buildDomTree from the window context of the target page
+            const result = window.buildDomTree(args);
+            return {
+              success: true,
+              result: result,
+              error: null,
+            };
+          } catch (error) {
+            const errorObj = error instanceof Error ? error : new Error(String(error));
+            return {
+              success: false,
+              result: null,
+              error: {
+                message: errorObj.message,
+                stack: errorObj.stack,
+                name: errorObj.name,
+              },
+            };
+          }
+        },
+        args: [
+          {
+            showHighlightElements,
+            focusHighlightIndex: focusElement,
+            viewportExpansion,
+            debugMode,
+          },
+        ],
+      });
+
+      const executionResult = results[0]?.result;
+
+      if (!executionResult) {
+        throw new Error('No result from script execution');
+      }
+
+      if (!executionResult.success) {
+        const errorInfo = executionResult.error;
+        logger.error('buildDomTree execution failed:', errorInfo);
+        throw new Error(`buildDomTree execution failed: ${errorInfo?.message || 'Unknown error'}`);
+      }
+
+      const evalPage = executionResult.result as unknown as BuildDomTreeResult;
+
+      if (!evalPage || !evalPage.map || !evalPage.rootId) {
+        logger.error('Invalid buildDomTree result structure:', {
+          hasEvalPage: !!evalPage,
+          hasMap: !!evalPage?.map,
+          hasRootId: !!evalPage?.rootId,
+          mapKeys: evalPage?.map ? Object.keys(evalPage.map).length : 0,
+          rootId: evalPage?.rootId,
+        });
+        throw new Error('Failed to build DOM tree: No result returned or invalid structure');
+      }
+
+      // Log performance metrics in debug mode
+      if (debugMode && evalPage.perfMetrics) {
+        logger.debug('DOM Tree Building Performance Metrics:', evalPage.perfMetrics);
+      }
+
+      return _constructDomTree(evalPage);
+    } catch (error) {
+      logger.error('_buildDomTree failed:', error);
+      throw error;
+    }
   });
-
-  // First cast to unknown, then to BuildDomTreeResult
-  const evalPage = results[0]?.result as unknown as BuildDomTreeResult;
-  if (!evalPage || !evalPage.map || !evalPage.rootId) {
-    throw new Error('Failed to build DOM tree: No result returned or invalid structure');
-  }
-
-  // Log performance metrics in debug mode
-  if (debugMode && evalPage.perfMetrics) {
-    logger.debug('DOM Tree Building Performance Metrics:', evalPage.perfMetrics);
-  }
-
-  return _constructDomTree(evalPage);
 }
 
 /**
@@ -258,6 +390,16 @@ export function _parse_node(nodeData: RawDomTreeNode): [DOMBaseNode | null, stri
 
 export async function removeHighlights(tabId: number): Promise<void> {
   try {
+    // Validate tab exists before attempting script execution
+    try {
+      await chrome.tabs.get(tabId);
+    } catch (error) {
+      logger.warning(
+        `Tab ${tabId} is no longer valid, skipping highlight removal: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+
     await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
@@ -285,22 +427,33 @@ export async function removeHighlights(tabId: number): Promise<void> {
  * @returns A tuple containing the number of pixels above and below the current scroll position.
  */
 export async function getScrollInfo(tabId: number): Promise<[number, number]> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    func: () => {
-      const scroll_y = window.scrollY;
-      const viewport_height = window.innerHeight;
-      const total_height = document.documentElement.scrollHeight;
-      return {
-        pixels_above: scroll_y,
-        pixels_below: total_height - (scroll_y + viewport_height),
-      };
-    },
-  });
+  try {
+    // Validate tab exists before attempting script execution
+    try {
+      await chrome.tabs.get(tabId);
+    } catch (error) {
+      logger.warning(
+        `Tab ${tabId} is no longer valid, returning default scroll info: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [0, 0];
+    }
 
-  const result = results[0]?.result;
-  if (!result) {
-    throw new Error('Failed to get scroll information');
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        return [
+          window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0,
+          Math.max(
+            0,
+            (document.documentElement?.scrollHeight || document.body?.scrollHeight || 0) - window.innerHeight,
+          ) - (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0),
+        ];
+      },
+    });
+    const result = results[0]?.result as [number, number] | undefined;
+    return result || [0, 0];
+  } catch (error) {
+    logger.error('Failed to get scroll info:', error);
+    return [0, 0];
   }
-  return [result.pixels_above, result.pixels_below];
 }

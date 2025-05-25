@@ -66,6 +66,8 @@ export default class Page {
   private _validWebPage = false;
   private _cachedState: PageState | null = null;
   private _cachedStateClickableElementsHashes: CachedStateClickableElementsHashes | null = null;
+  private _scriptContent: string | null = null; // Cache script content at class level
+  private _injectionInProgress: Promise<void> | null = null; // Prevent concurrent injections
 
   constructor(tabId: number, url: string, title: string, config: Partial<BrowserContextConfig> = {}) {
     this._tabId = tabId;
@@ -109,6 +111,21 @@ export default class Page {
 
     // Add anti-detection scripts
     await this._addAntiDetectionScripts();
+
+    // Ensure buildDomTree script is injected when attaching to page
+    // This prevents race conditions where getState() is called before script injection
+    try {
+      logger.info('Ensuring buildDomTree script is available for tab', this._tabId);
+
+      // Import the injection function (we need to make this available)
+      // For now, let's inject directly here
+      await this._injectBuildDomTreeScript();
+
+      logger.info('buildDomTree script injection completed for tab', this._tabId);
+    } catch (error) {
+      logger.error('Failed to inject buildDomTree script during page attachment:', error);
+      // Don't fail attachment, but log the issue
+    }
 
     return true;
   }
@@ -155,6 +172,170 @@ export default class Page {
     `);
   }
 
+  /**
+   * Inject buildDomTree script directly into the page
+   */
+  private async _injectBuildDomTreeScript(): Promise<void> {
+    if (!this._puppeteerPage) {
+      throw new Error('Puppeteer page not available');
+    }
+
+    // Prevent concurrent injections
+    if (this._injectionInProgress) {
+      logger.info('Script injection already in progress, waiting...');
+      await this._injectionInProgress;
+      return;
+    }
+
+    // Create injection promise and store it
+    this._injectionInProgress = this._performScriptInjection();
+
+    try {
+      await this._injectionInProgress;
+    } finally {
+      this._injectionInProgress = null;
+    }
+  }
+
+  private async _performScriptInjection(): Promise<void> {
+    const getScriptContent = async (): Promise<string> => {
+      if (!this._scriptContent) {
+        const response = await fetch(chrome.runtime.getURL('buildDomTree.js'));
+        this._scriptContent = await response.text();
+      }
+      return this._scriptContent;
+    };
+
+    const validateTab = async (): Promise<void> => {
+      try {
+        await chrome.tabs.get(this._tabId);
+      } catch (error) {
+        throw new Error(
+          `Tab ${this._tabId} is no longer valid: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
+
+    const checkScriptAvailability = async (): Promise<boolean> => {
+      try {
+        await validateTab();
+        const hasScriptResults = await chrome.scripting.executeScript({
+          target: { tabId: this._tabId },
+          func: () => typeof window.buildDomTree === 'function',
+        });
+        return hasScriptResults[0]?.result || false;
+      } catch (error) {
+        logger.warning(`Script availability check failed: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    };
+
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`Script injection attempt ${attempt}/${maxRetries} for tab ${this._tabId}`);
+
+        // Check if script is already available
+        const hasScript = await checkScriptAvailability();
+        if (hasScript) {
+          logger.info('buildDomTree script already available, skipping injection');
+          return;
+        }
+
+        // Exponential backoff for retries
+        if (attempt > 1) {
+          const delay = Math.min(500 * Math.pow(2, attempt - 2), 2000); // 500ms, 1s, 2s max
+          logger.info(`Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        // Method 1: Try file injection first
+        try {
+          logger.info('Attempting file-based script injection...');
+          await validateTab();
+
+          await chrome.scripting.executeScript({
+            target: { tabId: this._tabId },
+            files: ['buildDomTree.js'],
+          });
+
+          // Wait for script to execute and verify with single operation
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          const scriptLoaded = await checkScriptAvailability();
+          if (scriptLoaded) {
+            logger.info('File-based script injection successful');
+            return;
+          }
+
+          logger.warning('File-based injection completed but script not available');
+        } catch (fileError) {
+          logger.warning('File-based injection failed:', fileError);
+        }
+
+        // Method 2: Try inline injection as fallback
+        try {
+          logger.info('Attempting inline script injection...');
+          await validateTab();
+
+          const content = await getScriptContent();
+
+          const inlineResults = await chrome.scripting.executeScript({
+            target: { tabId: this._tabId },
+            func: (code: string) => {
+              try {
+                eval(code);
+                return { success: true, error: null };
+              } catch (error) {
+                return {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                };
+              }
+            },
+            args: [content],
+          });
+
+          // Check the actual return value from inline injection
+          const inlineResult = inlineResults[0]?.result;
+          if (!inlineResult?.success) {
+            throw new Error(`Inline injection failed: ${inlineResult?.error || 'Unknown error'}`);
+          }
+
+          // Wait for script to execute and verify
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          const inlineScriptLoaded = await checkScriptAvailability();
+          if (inlineScriptLoaded) {
+            logger.info('Inline script injection successful');
+            return;
+          }
+
+          logger.warning('Inline injection completed but script not available');
+        } catch (inlineError) {
+          logger.warning('Inline injection failed:', inlineError);
+        }
+
+        // If we've reached max retries, throw error
+        if (attempt === maxRetries) {
+          throw new Error('All injection methods failed - buildDomTree not available after injection');
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        logger.warning(`Script injection attempt ${attempt} failed:`, lastError.message);
+
+        if (attempt === maxRetries) {
+          throw lastError;
+        }
+      }
+    }
+
+    // Should never reach here, but just in case
+    throw lastError || new Error('Script injection failed for unknown reason');
+  }
+
   async detachPuppeteer(): Promise<void> {
     if (this._browser) {
       await this._browser.disconnect();
@@ -181,6 +362,7 @@ export default class Page {
       showHighlightElements,
       focusElement,
       this._config.viewportExpansion,
+      true, // Enable debug mode to help troubleshoot DOM building issues
     );
   }
 
@@ -201,8 +383,8 @@ export default class Page {
 
   async getState(useVision = false, cacheClickableElementsHashes = false): Promise<PageState> {
     if (!this._validWebPage) {
-      // return the initial state
-      return build_initial_state(this._tabId);
+      // return the initial state with current URL and title instead of empty strings
+      return build_initial_state(this._tabId, this._state.url, this._state.title);
     }
     await this.waitForPageAndFramesLoad();
     const updatedState = await this._updateState(useVision);

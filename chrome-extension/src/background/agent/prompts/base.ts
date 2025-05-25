@@ -25,7 +25,9 @@ abstract class BasePrompt {
    * @returns HumanMessage from LangChain
    */
   async buildBrowserStateUserMessage(context: AgentContext): Promise<HumanMessage> {
-    const browserState = await context.browserContext.getState(context.options.useVision);
+    // Use the same caching behavior as Navigator, but respect vision settings
+    // useVision from context options, cacheClickableElementsHashes=true for consistency
+    const browserState = await context.browserContext.getState(context.options.useVision, true);
     const rawElementsText = browserState.elementTree.clickableElementsToString(context.options.includeAttributes);
     const hasContentAbove = (browserState.pixelsAbove || 0) > 0;
     const hasContentBelow = (browserState.pixelsBelow || 0) > 0;
@@ -64,7 +66,11 @@ abstract class BasePrompt {
       for (let i = 0; i < context.actionResults.length; i++) {
         const result = context.actionResults[i];
         if (result.extractedContent) {
-          actionResultsDescription += `\nAction result ${i + 1}/${context.actionResults.length}: ${result.extractedContent}`;
+          let sourceText = '';
+          if (result.sourceURL) {
+            sourceText = ` (from ${result.sourceURL})`;
+          }
+          actionResultsDescription += `\nAction result ${i + 1}/${context.actionResults.length}${sourceText}: ${result.extractedContent}`;
         }
         if (result.error) {
           // only use last line of error

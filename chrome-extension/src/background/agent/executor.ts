@@ -131,6 +131,10 @@ export class Executor {
         };
 
         logger.info(`🔄 Step ${step + 1} / ${allowedMaxSteps}`);
+
+        // Update current page information at the start of each step
+        await context.updateCurrentPageInfo();
+
         if (await this.shouldStop()) {
           break;
         }

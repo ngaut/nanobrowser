@@ -472,7 +472,7 @@ window.buildDomTree = (
 
       try {
         return (
-          isInViewport &&
+          isAnyRectInViewport &&
           parentElement.checkVisibility({
             checkOpacity: true,
             checkVisibilityCSS: true,
@@ -481,7 +481,9 @@ window.buildDomTree = (
       } catch (e) {
         // Fallback if checkVisibility is not supported
         const style = window.getComputedStyle(parentElement);
-        return isInViewport && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        return (
+          isAnyRectInViewport && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
       }
     } catch (e) {
       console.warn('Error checking text node visibility:', e);
@@ -811,8 +813,6 @@ window.buildDomTree = (
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
-    return true;
-
     if (viewportExpansion === -1) {
       return true;
     }

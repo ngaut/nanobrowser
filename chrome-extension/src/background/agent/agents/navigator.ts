@@ -20,7 +20,93 @@ import { jsonNavigatorOutputSchema } from '../actions/json_schema';
 import { geminiNavigatorOutputSchema } from '../actions/json_gemini';
 import { calcBranchPathHashSet } from '@src/background/dom/views';
 import { URLNotAllowedError } from '@src/background/browser/views';
+
 const logger = createLogger('NavigatorAgent');
+
+// Constants for better maintainability
+const CONSTANTS = {
+  TASK_INSTRUCTION_PREFIX: '<nano_user_request>\nYour ultimate task is: ',
+  PLAN_TAG_START: '<plan>',
+  PLAN_TAG_REGEX: /<plan>([\s\S]*?)<\/plan>/,
+  ACTION_WAIT_TIME: 1000,
+  MAX_ACTION_ERRORS: 3,
+  DEFAULT_MESSAGES: {
+    TASK_NOT_FOUND: 'Task instruction not found.',
+    PLAN_NOT_FOUND: 'Active plan not found.',
+    NO_NEXT_STEP: 'No next step defined.',
+    UNKNOWN_PAGE: 'Unknown',
+    ANALYSIS_ERROR: 'Unable to analyze current action context',
+  },
+} as const;
+
+// Types for better type safety
+interface TaskInformation {
+  taskInstruction: string;
+  activePlan: string;
+  planSteps: string[];
+  nextPlanStep: string;
+}
+
+interface EnhancedBrowserState {
+  title: string;
+  url: string;
+  tabId: number;
+  elementTree: any;
+  tabs: any[];
+  pixelsAbove: number;
+  pixelsBelow: number;
+}
+
+interface NavigatorDetails {
+  status: string;
+  step: number;
+  timestamp: string;
+
+  // Prominent page information for UI display
+  currentPage: {
+    title: string;
+    url: string;
+    tabId: number;
+  };
+
+  browserState: {
+    currentPage: {
+      title: string;
+      url: string;
+      tabId: number;
+    };
+    interactiveElementsCount: number;
+    scrollPosition: {
+      pixelsAbove: number;
+      pixelsBelow: number;
+    };
+    openTabs: Array<{
+      id: number;
+      title: string;
+      url: string;
+      isActive: boolean;
+    }>;
+  };
+  planInfo: {
+    hasPlan: boolean;
+    nextStep: string;
+    upcomingSteps: string[];
+    totalStepsInPlan: number;
+  };
+  actionAnalysis: string;
+  temporalContext: {
+    stepNumber: number;
+    maxSteps: number;
+    progressPercentage: number;
+    executionStartTime: string;
+    planningInterval: number;
+    isPlannningStep: boolean;
+  };
+  inputs: {
+    taskInstruction: string;
+    activePlan: string;
+  };
+}
 
 export class NavigatorActionRegistry {
   private actions: Record<string, Action> = {};
@@ -133,128 +219,267 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let cancelled = false;
 
     try {
-      const allMessages = this.context.messageManager.getMessages();
-      let taskInstruction = 'Task instruction not found.';
-      const taskInstructionPrefix = '<nano_user_request>\nYour ultimate task is: ';
-      for (const msg of allMessages) {
-        if (
-          msg instanceof HumanMessage &&
-          typeof msg.content === 'string' &&
-          msg.content.startsWith(taskInstructionPrefix)
-        ) {
-          taskInstruction = msg.content;
-          break;
-        }
+      // Extract task and plan information
+      const taskInfo = this.extractTaskInformation();
+
+      // Get comprehensive browser state
+      const browserState = await this.getBrowserStateWithAnalysis();
+
+      // Create and emit enhanced navigator details
+      const enhancedDetails = this.createEnhancedNavigatorDetails(taskInfo, browserState);
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...', undefined, enhancedDetails);
+
+      // Execute navigation logic
+      const result = await this.executeNavigationStep();
+      if (result.cancelled) {
+        cancelled = true;
+        return agentOutput;
       }
 
-      let activePlan = 'Active plan not found.';
-      // Find the latest planner output for the active plan
-      for (let i = allMessages.length - 1; i >= 0; i--) {
-        const msg = allMessages[i];
-        if (msg instanceof AIMessage && typeof msg.content === 'string' && msg.content.startsWith('<plan>')) {
-          activePlan = msg.content;
-          break;
-        }
+      agentOutput.result = { done: result.done };
+      return agentOutput;
+    } catch (error) {
+      return this.handleNavigationError(error, agentOutput);
+    } finally {
+      if (cancelled) {
+        this.handleCancellation();
       }
+    }
+  }
 
-      const navigatorInputDetails = {
-        status: 'navigating',
-        step: this.context.nSteps,
-        inputs: {
-          taskInstruction,
-          activePlan,
-        },
-      };
+  /**
+   * Get browser state and calculate interactive elements count
+   */
+  private async getBrowserStateWithAnalysis(): Promise<EnhancedBrowserState & { interactiveElementsCount: number }> {
+    // Use consistent vision settings with other agents, and enable caching for performance
+    const browserState = await this.context.browserContext.getState(this.context.options.useVision, true);
+    const interactiveElementsCount = this.calculateInteractiveElementsCount(browserState.elementTree);
+
+    // Update shared context with current page information
+    await this.context.updateCurrentPageInfo();
+
+    // Enhanced error detection and validation
+    this.validatePageState(browserState, interactiveElementsCount);
+
+    return {
+      ...browserState,
+      interactiveElementsCount,
+    };
+  }
+
+  /**
+   * Validate page state and detect common issues
+   */
+  private validatePageState(browserState: EnhancedBrowserState, interactiveElementsCount: number): void {
+    const issues: string[] = [];
+
+    // Check for page loading issues
+    if (interactiveElementsCount === 0) {
+      issues.push('⚠️ No interactive elements detected - page may not have loaded properly');
+    }
+
+    // Check for scroll detection issues
+    if (browserState.pixelsAbove === 0 && browserState.pixelsBelow === 0) {
+      issues.push('⚠️ Scroll position detection shows 0/0 - page content may not be visible');
+    }
+
+    // Check for empty page title (often indicates loading issues)
+    if (!browserState.title || browserState.title.trim() === '') {
+      issues.push('⚠️ Page title is empty - possible loading issue');
+    }
+
+    // Log issues for debugging
+    if (issues.length > 0) {
+      logger.error('Page state validation issues detected:', issues.join(', '));
+
+      // Emit diagnostic event
       this.context.emitEvent(
         Actors.NAVIGATOR,
         ExecutionState.STEP_START,
-        'Navigating...',
+        'Page state validation issues detected',
         undefined,
-        navigatorInputDetails,
+        {
+          issues,
+          browserState: {
+            title: browserState.title,
+            url: browserState.url,
+            interactiveElementsCount,
+            scrollInfo: {
+              pixelsAbove: browserState.pixelsAbove,
+              pixelsBelow: browserState.pixelsBelow,
+            },
+          },
+        },
       );
-
-      const messageManager = this.context.messageManager;
-      // add the browser state message
-      await this.addStateMessageToMemory();
-      // check if the task is paused or stopped
-      if (this.context.paused || this.context.stopped) {
-        cancelled = true;
-        return agentOutput;
-      }
-
-      // call the model to get the actions to take
-      const inputMessages = messageManager.getMessages();
-      // logger.info('Navigator input message', inputMessages[inputMessages.length - 1]);
-
-      const modelOutput = await this.invoke(inputMessages);
-
-      // check if the task is paused or stopped
-      if (this.context.paused || this.context.stopped) {
-        cancelled = true;
-        return agentOutput;
-      }
-      // remove the last state message from memory before adding the model output
-      this.removeLastStateMessageFromMemory();
-      this.addModelOutputToMemory(modelOutput);
-
-      // take the actions
-      const actionResults = await this.doMultiAction(modelOutput);
-      this.context.actionResults = actionResults;
-
-      // check if the task is paused or stopped
-      if (this.context.paused || this.context.stopped) {
-        cancelled = true;
-        return agentOutput;
-      }
-      // emit event
-      this.context.emitEvent(
-        Actors.NAVIGATOR,
-        ExecutionState.STEP_OK,
-        'Navigation done',
-        undefined,
-        this.context.actionResults,
-      );
-      let done = false;
-      if (actionResults.length > 0 && actionResults[actionResults.length - 1].isDone) {
-        done = true;
-      }
-      agentOutput.result = { done };
-      return agentOutput;
-    } catch (error) {
-      this.removeLastStateMessageFromMemory();
-      // Check if this is an authentication error
-      if (isAuthenticationError(error)) {
-        throw new ChatModelAuthError('Navigator API Authentication failed. Please verify your API key', error);
-      }
-      if (isForbiddenError(error)) {
-        throw new ChatModelForbiddenError(LLM_FORBIDDEN_ERROR_MESSAGE, error);
-      }
-      if (isAbortedError(error)) {
-        throw new RequestCancelledError((error as Error).message);
-      }
-      if (error instanceof URLNotAllowedError) {
-        throw error;
-      }
-
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorString = `Navigation failed: ${errorMessage}`;
-      logger.error(errorString);
-      const errorDetails = {
-        error: errorMessage,
-        errorStack: error instanceof Error ? error.stack : undefined,
-      };
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString, undefined, errorDetails);
-      agentOutput.error = errorMessage;
-      return agentOutput;
-    } finally {
-      // if the task is cancelled, remove the last state message from memory and emit event
-      if (cancelled) {
-        this.removeLastStateMessageFromMemory();
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, 'Navigation cancelled', undefined, {
-          status: 'cancelled',
-        });
-      }
     }
+  }
+
+  /**
+   * Calculate the number of interactive elements on the page
+   */
+  private calculateInteractiveElementsCount(elementTree: any): number {
+    if (!elementTree) return 0;
+
+    return elementTree
+      .clickableElementsToString(this.context.options.includeAttributes)
+      .split('\n')
+      .filter((line: string) => line.trim().match(/^\[\d+\]/)).length;
+  }
+
+  /**
+   * Create comprehensive navigator details for enhanced output
+   */
+  private createEnhancedNavigatorDetails(
+    taskInfo: TaskInformation,
+    browserState: EnhancedBrowserState & { interactiveElementsCount: number },
+  ): NavigatorDetails {
+    const actionAnalysis = this.analyzeCurrentAction(browserState, taskInfo.taskInstruction, taskInfo.nextPlanStep);
+
+    const currentPageInfo = {
+      title: browserState.title || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE,
+      url: browserState.url || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE,
+      tabId: browserState.tabId,
+    };
+
+    return {
+      status: 'navigating',
+      step: this.context.nSteps,
+      timestamp: new Date().toISOString(),
+
+      // Prominent page information for easy UI access
+      currentPage: currentPageInfo,
+
+      browserState: {
+        currentPage: currentPageInfo, // Keep for backward compatibility
+        interactiveElementsCount: browserState.interactiveElementsCount,
+        scrollPosition: {
+          pixelsAbove: browserState.pixelsAbove || 0,
+          pixelsBelow: browserState.pixelsBelow || 0,
+        },
+        openTabs:
+          browserState.tabs?.map(tab => ({
+            id: tab.id,
+            title: tab.title,
+            url: tab.url,
+            isActive: tab.id === browserState.tabId,
+          })) || [],
+      },
+
+      planInfo: {
+        hasPlan: taskInfo.activePlan !== CONSTANTS.DEFAULT_MESSAGES.PLAN_NOT_FOUND,
+        nextStep: taskInfo.nextPlanStep,
+        upcomingSteps: taskInfo.planSteps.slice(1, 4), // Show up to 3 upcoming steps
+        totalStepsInPlan: taskInfo.planSteps.length,
+      },
+
+      actionAnalysis,
+
+      temporalContext: {
+        stepNumber: this.context.nSteps + 1,
+        maxSteps: this.context.options.maxSteps,
+        progressPercentage: Math.round(((this.context.nSteps + 1) / this.context.options.maxSteps) * 100),
+        executionStartTime: this.context.taskId,
+        planningInterval: this.context.options.planningInterval,
+        isPlannningStep: this.context.nSteps % this.context.options.planningInterval === 0,
+      },
+
+      inputs: {
+        taskInstruction: taskInfo.taskInstruction,
+        activePlan: taskInfo.activePlan,
+      },
+    };
+  }
+
+  /**
+   * Execute the main navigation step logic
+   */
+  private async executeNavigationStep(): Promise<{ done: boolean; cancelled: boolean }> {
+    // Add browser state to memory
+    await this.addStateMessageToMemory();
+
+    if (this.context.paused || this.context.stopped) {
+      return { done: false, cancelled: true };
+    }
+
+    // Get LLM response
+    const inputMessages = this.context.messageManager.getMessages();
+    const modelOutput = await this.invoke(inputMessages);
+
+    if (this.context.paused || this.context.stopped) {
+      return { done: false, cancelled: true };
+    }
+
+    // Process model output
+    this.removeLastStateMessageFromMemory();
+    this.addModelOutputToMemory(modelOutput);
+
+    // Execute actions
+    const actionResults = await this.doMultiAction(modelOutput);
+    this.context.actionResults = actionResults;
+
+    if (this.context.paused || this.context.stopped) {
+      return { done: false, cancelled: true };
+    }
+
+    // Emit success event
+    this.context.emitEvent(
+      Actors.NAVIGATOR,
+      ExecutionState.STEP_OK,
+      'Navigation done',
+      undefined,
+      this.context.actionResults,
+    );
+
+    const done = actionResults.length > 0 && actionResults[actionResults.length - 1].isDone;
+    return { done, cancelled: false };
+  }
+
+  /**
+   * Handle navigation errors with proper error classification
+   */
+  private handleNavigationError(
+    error: unknown,
+    agentOutput: AgentOutput<NavigatorResult>,
+  ): AgentOutput<NavigatorResult> {
+    this.removeLastStateMessageFromMemory();
+
+    // Handle specific error types
+    if (isAuthenticationError(error)) {
+      throw new ChatModelAuthError('Navigator API Authentication failed. Please verify your API key', error);
+    }
+    if (isForbiddenError(error)) {
+      throw new ChatModelForbiddenError(LLM_FORBIDDEN_ERROR_MESSAGE, error);
+    }
+    if (isAbortedError(error)) {
+      throw new RequestCancelledError((error as Error).message);
+    }
+    if (error instanceof URLNotAllowedError) {
+      throw error;
+    }
+
+    // Handle general errors
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorString = `Navigation failed: ${errorMessage}`;
+    logger.error(errorString);
+
+    const errorDetails = {
+      error: errorMessage,
+      errorStack: error instanceof Error ? error.stack : undefined,
+    };
+
+    this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_FAIL, errorString, undefined, errorDetails);
+    agentOutput.error = errorMessage;
+    return agentOutput;
+  }
+
+  /**
+   * Handle navigation cancellation
+   */
+  private handleCancellation(): void {
+    this.removeLastStateMessageFromMemory();
+    this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, 'Navigation cancelled', undefined, {
+      status: 'cancelled',
+    });
   }
 
   /**
@@ -390,7 +615,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           return results;
         }
         // TODO: wait for 1 second for now, need to optimize this to avoid unnecessary waiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, CONSTANTS.ACTION_WAIT_TIME));
       } catch (error) {
         if (error instanceof URLNotAllowedError) {
           throw error;
@@ -400,7 +625,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         // unexpected error, emit event
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMessage);
         errCount++;
-        if (errCount > 3) {
+        if (errCount > CONSTANTS.MAX_ACTION_ERRORS) {
           throw new Error('Too many errors in actions');
         }
         results.push(
@@ -413,5 +638,100 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       }
     }
     return results;
+  }
+
+  /**
+   * Analyze current action context with enhanced information
+   */
+  private analyzeCurrentAction(
+    browserState: EnhancedBrowserState & { interactiveElementsCount: number },
+    taskInstruction: string,
+    nextPlanStep: string,
+  ): string {
+    try {
+      const pageTitle = browserState.title || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE;
+      const pageUrl = browserState.url || CONSTANTS.DEFAULT_MESSAGES.UNKNOWN_PAGE;
+      const elementCount = browserState.interactiveElementsCount;
+
+      let analysis = `🌐 Currently on: "${pageTitle}"\n`;
+      analysis += `📍 URL: ${pageUrl}\n`;
+      analysis += `🎯 Found ${elementCount} interactive elements available for action.\n`;
+
+      // Basic page state guidance (no hardcoded patterns)
+      if (elementCount === 0) {
+        analysis += `⚠️ CRITICAL: No interactive elements detected! `;
+        if (browserState.pixelsBelow > 0) {
+          analysis += `Page has content below - try scrolling down to reveal more elements.\n`;
+        } else {
+          analysis += `Page may not have loaded properly - try waiting or refreshing.\n`;
+        }
+      }
+
+      // Basic scroll availability info
+      const hasContentBelow = browserState.pixelsBelow > 0;
+      const hasContentAbove = browserState.pixelsAbove > 0;
+
+      if (hasContentBelow) {
+        analysis += `📜 Content available below (${browserState.pixelsBelow}px) - scrolling may reveal more options.\n`;
+      }
+
+      if (hasContentAbove) {
+        analysis += `⬆️ Content available above (${browserState.pixelsAbove}px) - can scroll up if needed.\n`;
+      }
+
+      if (nextPlanStep !== CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP) {
+        analysis += `📋 Next planned action: ${nextPlanStep}`;
+      }
+
+      return analysis;
+    } catch (error) {
+      return CONSTANTS.DEFAULT_MESSAGES.ANALYSIS_ERROR;
+    }
+  }
+
+  /**
+   * Extract task instruction and plan information from message history
+   */
+  private extractTaskInformation(): TaskInformation {
+    const allMessages = this.context.messageManager.getMessages();
+    let taskInstruction: string = CONSTANTS.DEFAULT_MESSAGES.TASK_NOT_FOUND;
+    let activePlan: string = CONSTANTS.DEFAULT_MESSAGES.PLAN_NOT_FOUND;
+    let planSteps: string[] = [];
+    let nextPlanStep: string = CONSTANTS.DEFAULT_MESSAGES.NO_NEXT_STEP;
+
+    // Find task instruction
+    for (const msg of allMessages) {
+      if (
+        msg instanceof HumanMessage &&
+        typeof msg.content === 'string' &&
+        msg.content.startsWith(CONSTANTS.TASK_INSTRUCTION_PREFIX)
+      ) {
+        taskInstruction = msg.content;
+        break;
+      }
+    }
+
+    // Find latest plan - simplified approach
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const msg = allMessages[i];
+      if (
+        msg instanceof AIMessage &&
+        typeof msg.content === 'string' &&
+        msg.content.startsWith(CONSTANTS.PLAN_TAG_START)
+      ) {
+        activePlan = msg.content;
+
+        // Simple plan extraction - just get the raw plan content
+        const planMatch = msg.content.match(CONSTANTS.PLAN_TAG_REGEX);
+        if (planMatch) {
+          const planText = planMatch[1].trim();
+          // Let the LLM understand the plan structure instead of complex parsing
+          nextPlanStep = `Plan available: ${planText.substring(0, 200)}${planText.length > 200 ? '...' : ''}`;
+        }
+        break;
+      }
+    }
+
+    return { taskInstruction, activePlan, planSteps, nextPlanStep };
   }
 }

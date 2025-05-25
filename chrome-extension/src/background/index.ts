@@ -38,7 +38,9 @@ async function isScriptInjected(tabId: number): Promise<boolean> {
 }
 
 // // Function to inject the buildDomTree script
-async function injectBuildDomTree(tabId: number) {
+async function injectBuildDomTree(tabId: number, retryCount = 0) {
+  const maxRetries = 3;
+
   try {
     // Check if already injected
     const alreadyInjected = await isScriptInjected(tabId);
@@ -47,13 +49,58 @@ async function injectBuildDomTree(tabId: number) {
       return;
     }
 
+    // Get tab info for debugging
+    const tab = await chrome.tabs.get(tabId);
+    console.log(`[ScriptInjection] Attempting to inject into tab ${tabId}: ${tab.url} (attempt ${retryCount + 1})`);
+
+    // Wait a bit for the page to be fully ready, especially on slower sites
+    if (retryCount > 0) {
+      const delay = retryCount * 1000; // 1s, 2s, 3s delays
+      console.log(`[ScriptInjection] Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    // Inject the script
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ['buildDomTree.js'],
     });
-    console.log('Scripts successfully injected');
+
+    // Wait a moment for script to be available
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Verify injection worked
+    const nowInjected = await isScriptInjected(tabId);
+    if (nowInjected) {
+      console.log('Scripts successfully injected');
+    } else {
+      console.error('Script injection failed - buildDomTree not available after injection');
+
+      // Retry if we haven't exceeded max retries
+      if (retryCount < maxRetries) {
+        console.log(`[ScriptInjection] Retrying injection (${retryCount + 1}/${maxRetries})...`);
+        return injectBuildDomTree(tabId, retryCount + 1);
+      } else {
+        console.error(`[ScriptInjection] Failed to inject script after ${maxRetries + 1} attempts`);
+      }
+    }
   } catch (err) {
     console.error('Failed to inject scripts:', err);
+
+    // Try to get more details about the error
+    if (err instanceof Error) {
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name,
+      });
+    }
+
+    // Retry on error if we haven't exceeded max retries
+    if (retryCount < maxRetries) {
+      console.log(`[ScriptInjection] Retrying injection after error (${retryCount + 1}/${maxRetries})...`);
+      return injectBuildDomTree(tabId, retryCount + 1);
+    }
   }
 }
 
