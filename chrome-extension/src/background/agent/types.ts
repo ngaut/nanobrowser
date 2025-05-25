@@ -45,6 +45,11 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
     'alt',
     'aria-expanded',
     'data-date-format',
+    'data-testid',
+    'data-cy',
+    'data-qa',
+    'aria-describedby',
+    'aria-labelledby',
   ],
   planningInterval: 3,
 };
@@ -55,6 +60,19 @@ export interface CurrentPageInfo {
   url: string;
   tabId: number;
   lastUpdated: string;
+}
+
+// Navigator context for action reasoning
+export interface NavigatorContext {
+  taskInstruction: string;
+  activePlan: string;
+  nextPlanStep: string;
+  currentPlanStep: number;
+  availableElements: number;
+  pageContext: {
+    title: string;
+    url: string;
+  };
 }
 
 export class AgentContext {
@@ -75,6 +93,9 @@ export class AgentContext {
 
   // Shared current page information for all agents
   currentPage: CurrentPageInfo | null;
+
+  // Navigator context for action reasoning
+  currentNavigatorContext: NavigatorContext | null;
 
   // Execution timing
   executionStartTime: string;
@@ -102,6 +123,7 @@ export class AgentContext {
     this.actionResults = [];
     this.stateMessageAdded = false;
     this.currentPage = null;
+    this.currentNavigatorContext = null;
     this.executionStartTime = new Date().toISOString();
   }
 

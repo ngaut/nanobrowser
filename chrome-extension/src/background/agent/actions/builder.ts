@@ -128,6 +128,47 @@ export class ActionBuilder {
     this.extractorLLM = extractorLLM;
   }
 
+  /**
+   * Generate reasoning for why a specific element was selected
+   */
+  private generateSelectionReasoning(elementNode: any, input: any, navigatorContext: any): string {
+    if (!navigatorContext) {
+      return 'No context available for selection reasoning';
+    }
+
+    const reasoning = [];
+
+    // Task context
+    if (navigatorContext.nextPlanStep) {
+      reasoning.push(`Plan step: "${navigatorContext.nextPlanStep}"`);
+    }
+
+    // Element characteristics
+    const elementType = elementNode.tagName?.toLowerCase() || 'unknown';
+    const elementText = elementNode.getAllTextTillNextClickableElement?.(2)?.trim() || '';
+    const elementId = elementNode.attributes?.id || '';
+    const elementClass = elementNode.attributes?.class || '';
+
+    reasoning.push(`Selected ${elementType} element [${input.index}]`);
+
+    if (elementText) {
+      reasoning.push(`with text: "${elementText}"`);
+    }
+
+    if (elementId) {
+      reasoning.push(`with ID: "${elementId}"`);
+    }
+
+    if (elementClass) {
+      reasoning.push(`with class: "${elementClass}"`);
+    }
+
+    // Page context
+    reasoning.push(`on page: "${navigatorContext.pageContext.title}"`);
+
+    return reasoning.join(' ');
+  }
+
   buildDefaultActions() {
     const actions = [];
 
@@ -342,6 +383,9 @@ export class ActionBuilder {
             role: role || null,
             type: type || null,
           },
+          // Include Navigator context for better action reasoning
+          navigatorContext: this.context.currentNavigatorContext,
+          selectionReasoning: this.generateSelectionReasoning(elementNode, input, this.context.currentNavigatorContext),
         };
 
         this.context.emitEvent(

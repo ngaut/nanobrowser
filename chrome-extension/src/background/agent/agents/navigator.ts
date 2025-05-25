@@ -244,6 +244,19 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         undefined,
       );
 
+      // Store current context for action reasoning
+      this.context.currentNavigatorContext = {
+        taskInstruction: taskInfo.taskInstruction,
+        activePlan: taskInfo.activePlan,
+        nextPlanStep: taskInfo.nextPlanStep,
+        currentPlanStep: taskInfo.currentPlanStep,
+        availableElements: browserState.interactiveElementsCount,
+        pageContext: {
+          title: browserState.title || 'Unknown',
+          url: browserState.url || 'Unknown',
+        },
+      };
+
       // Execute navigation logic
       const result = await this.executeNavigationStep();
       if (result.cancelled) {

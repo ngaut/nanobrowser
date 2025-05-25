@@ -44,6 +44,20 @@ interface ProgressBarProps {
       isActive: boolean;
     }>;
   };
+  // Enhanced action context
+  lastActionContext?: {
+    actionName: string;
+    elementDetails?: {
+      description: string;
+      index: number;
+      tagName: string;
+      text: string;
+      id?: string;
+      className?: string;
+    };
+    selectionReasoning?: string;
+    navigatorContext?: any;
+  };
 }
 
 export default memo(function ProgressBar({
@@ -57,6 +71,7 @@ export default memo(function ProgressBar({
   temporalContext,
   actionAnalysis,
   browserState,
+  lastActionContext,
 }: ProgressBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false);
@@ -399,6 +414,30 @@ export default memo(function ProgressBar({
                   <div className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Active tab: {browserState.openTabs.find(tab => tab.isActive)?.title || 'Unknown'}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Last Action Context */}
+            {lastActionContext && (
+              <div>
+                <h4 className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  🎯 Last Action Context
+                </h4>
+                <div className="space-y-1">
+                  <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Action: {lastActionContext.actionName}
+                  </div>
+                  {lastActionContext.elementDetails && (
+                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Element: {lastActionContext.elementDetails.description}
+                    </div>
+                  )}
+                  {lastActionContext.selectionReasoning && (
+                    <div className={`text-xs ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Reasoning: {lastActionContext.selectionReasoning}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
