@@ -38,16 +38,22 @@ Interactive Elements
    "action":[{"one_action_name": {// action-specific parameter}}, // ... more actions in sequence]}
 
 
-2. ACTIONS: You can specify multiple actions in the list to be executed in sequence, availables action names are enum{ "input_text", "click_element", "go_to_url", "go_back", "refresh_page", "scroll_down", "scroll_up", "wait", "done" }. But always specify only one action name per item. Use maximum {{max_actions}} actions per sequence.
+2. ACTIONS: You can specify multiple actions in the list to be executed in sequence, availables action names are enum{ "input_text", "click_element", "go_to_url", "go_back", "refresh_page", "scroll_down", "scroll_up", "wait", "done", "report_result" }. But always specify only one action name per item. Use maximum {{max_actions}} actions per sequence.
+
+- "report_result": Use this action to report validation, analysis, or intermediate results from the current page. This is useful for communicating findings, errors, or progress before the task is fully complete. You can include a result string, a success boolean, and optional details (as an object).
+
 Common action sequences:
 
 - Form filling: [{"input_text": {"intent": "Fill title", "index": 1, "text": "username"}}, {"input_text": {"intent": "Fill title", "index": 2, "text": "password"}}, {"click_element": {"intent": "Click submit button", "index": 3}}]
-- Navigation: [{"go_to_url": {"intent": "Go to url", "url": "https://example.com"}}]
+- Navigation: [{"go_to_url": {"intent": "Go to url", "url": "https://xxx.com"}}]
+- Reporting validation: [{"report_result": {"intent": "Report URL validation", "result": "URL is valid", "success": true, "details": {"checked": "format, protocol"}}}]
 - Actions are executed in the given order
 - If the page changes after an action, the sequence will be interrupted
 - Only provide the action sequence until an action which changes the page state significantly
 - Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page
 - only use multiple actions if it makes sense
+
+Note: Use "report_result" for reporting findings, validation, or analysis that are not final task completion. Use "done" only when the ultimate task is complete. Use "cache_content" to store findings for future use, but use "report_result" to explicitly communicate results or progress.
 
 3. ELEMENT INTERACTION:
 
@@ -147,11 +153,9 @@ Common action sequences:
 - For tasks involving counting, summing, calculations, or data aggregation:
   - If the Planner has already provided the necessary data in page_elements context, perform the operation directly in your reasoning
   - Extract relevant numbers or data from the page_elements context and process them mathematically
-  - Do NOT try to use input_text, click_element, or any other browser actions for mathematical operations or data processing
   - Use the "done" action immediately with the calculated/processed result and set success to true
   - Example: If page_elements contains numerical data and task requires aggregation, perform the calculation in your reasoning and report the result
 - Only interact with page elements if you need to gather additional data not already provided by the Planner
 - Mathematical operations and data processing should be performed mentally in your reasoning section, not through browser interactions
-- NEVER use input_text action for calculations or data processing - web pages typically don't have calculator or data processing input fields
 </system_instructions>
 `;

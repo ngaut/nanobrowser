@@ -19,6 +19,7 @@ import {
   getDropdownOptionsActionSchema,
   closeTabActionSchema,
   waitActionSchema,
+  reportResultActionSchema,
 } from './schemas';
 import { z } from 'zod';
 import { createLogger } from '@src/background/log';
@@ -725,6 +726,44 @@ export class ActionBuilder {
       });
     }, cacheContentActionSchema);
     actions.push(cacheContent);
+
+    const reportResult = new Action(async (input: z.infer<typeof reportResultActionSchema.schema>) => {
+      const actionName = reportResultActionSchema.name;
+      const baseDetail = `Reporting result: ${input.result}`;
+      const finalDetail = `${actionName}: ${input.intent || baseDetail}`;
+
+      // Get current page info for action event
+      const currentPageInfo = await this.context.getCurrentPageInfo();
+      const actStartDetails = {
+        actionName: actionName,
+        actionArgs: input,
+        currentPage: {
+          title: currentPageInfo.title,
+          url: currentPageInfo.url,
+          tabId: currentPageInfo.tabId,
+        },
+      };
+
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, finalDetail, undefined, actStartDetails);
+
+      const currentPage = await this.context.browserContext.getCurrentPage();
+      const currentURL = currentPage.url();
+
+      // Pass comprehensive details as the output
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, `Action ${actionName} successful`, undefined, {
+        result: input.result,
+        success: input.success,
+        details: input.details,
+        currentPage: actStartDetails.currentPage,
+      });
+
+      return new ActionResult({
+        extractedContent: input.result,
+        includeInMemory: true,
+        sourceURL: currentURL,
+      });
+    }, reportResultActionSchema);
+    actions.push(reportResult);
 
     const scrollDown = new Action(async (input: z.infer<typeof scrollDownActionSchema.schema>) => {
       const amount = input.amount !== undefined && input.amount !== null ? `${input.amount} pixels` : 'one page';

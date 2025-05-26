@@ -234,7 +234,34 @@ export const jsonNavigatorOutputSchema = {
               },
             },
             required: ['intent', 'content'],
-            title: 'cache_content_parameters',
+            title: 'CacheContentAction',
+            type: 'object',
+            nullable: true,
+          },
+          report_result: {
+            description: 'Report validation or analysis results from the current page',
+            properties: {
+              intent: {
+                title: 'Intent',
+                type: 'string',
+                description: 'purpose of this action',
+              },
+              result: {
+                title: 'Result',
+                type: 'string',
+              },
+              success: {
+                title: 'Success',
+                type: 'boolean',
+              },
+              details: {
+                title: 'Details',
+                type: 'object',
+                additionalProperties: true,
+              },
+            },
+            required: ['intent', 'result', 'success'],
+            title: 'ReportResultAction',
             type: 'object',
             nullable: true,
           },

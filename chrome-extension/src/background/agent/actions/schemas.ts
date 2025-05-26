@@ -119,6 +119,17 @@ export const cacheContentActionSchema: ActionSchema = {
   }),
 };
 
+export const reportResultActionSchema: ActionSchema = {
+  name: 'report_result',
+  description: 'Report validation or analysis results from the current page',
+  schema: z.object({
+    intent: z.string().optional(),
+    result: z.string(),
+    success: z.boolean(),
+    details: z.record(z.unknown()).optional(),
+  }),
+};
+
 export const scrollDownActionSchema: ActionSchema = {
   name: 'scroll_down',
   description: 'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',
