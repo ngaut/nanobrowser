@@ -118,22 +118,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         useVisionForPlanner: this.context.options.useVisionForPlanner,
       });
 
-      // Smart logging: Only log full content for the latest state message (most important for debugging)
-      const messageSummary = plannerMessages
-        .map((msg, index) => {
-          const contentLength =
-            typeof msg.content === 'string'
-              ? msg.content.length
-              : typeof msg.content === 'object'
-                ? JSON.stringify(msg.content || {}).length
-                : 0;
-          return `[${index}] ${msg.constructor.name} (${contentLength} chars)`;
-        })
-        .join(', ');
-
-      logger.info(`🧠 Planner processing ${plannerMessages.length} messages: ${messageSummary}`);
-
-      // Only log full content of the current state (last message) for debugging
+      // Critical debugging: Log COMPLETE current state (most important for debugging)
       if (plannerMessages.length > 0) {
         const lastMsg = plannerMessages[plannerMessages.length - 1];
         const lastContentStr =
@@ -141,7 +126,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         logger.infoDetailed(`🧠 Current State (Message ${plannerMessages.length - 1}):`, {
           type: lastMsg.constructor.name,
           contentLength: lastContentStr.length,
-          fullContent: lastContentStr.substring(0, 1000) + (lastContentStr.length > 1000 ? '...[truncated]' : ''),
+          fullContent: lastContentStr, // NO TRUNCATION - this is critical for debugging
         });
       }
 

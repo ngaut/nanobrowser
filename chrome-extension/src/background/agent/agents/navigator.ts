@@ -519,20 +519,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       withStructuredOutput: this.withStructuredOutput,
     });
 
-    // Smart logging: Only log message summaries, not full content (already logged by Planner)
-    const messageSummary = inputMessages
-      .map((msg, index) => {
-        const contentLength =
-          typeof msg.content === 'string'
-            ? msg.content.length
-            : typeof msg.content === 'object'
-              ? JSON.stringify(msg.content || {}).length
-              : 0;
-        return `[${index}] ${msg.constructor.name} (${contentLength} chars)`;
-      })
-      .join(', ');
-
-    logger.info(`🤖 Navigator processing ${inputMessages.length} messages: ${messageSummary}`);
+    // Navigator processes messages (details already logged by Planner's current state)
+    logger.info(`🤖 Navigator processing ${inputMessages.length} messages`);
 
     // Add timeout and retry logic for LLM invocation
     let modelOutput: this['ModelOutput'] | null = null;
