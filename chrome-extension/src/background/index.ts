@@ -106,7 +106,13 @@ async function injectBuildDomTree(tabId: number, retryCount = 0) {
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (tabId && changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
-    await injectBuildDomTree(tabId);
+    // SECURITY: Only inject scripts into plugin-owned tabs
+    if (browserContext.isPluginOwnedTab(tabId)) {
+      console.log(`[ScriptInjection] Tab ${tabId} is plugin-owned, injecting scripts`);
+      await injectBuildDomTree(tabId);
+    } else {
+      console.log(`[ScriptInjection] Tab ${tabId} is user-owned, skipping script injection`);
+    }
   }
 });
 
