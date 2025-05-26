@@ -519,24 +519,20 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       withStructuredOutput: this.withStructuredOutput,
     });
 
-    // Log each message separately for full traceability
-    inputMessages.forEach((msg, index) => {
-      let contentStr: string;
-      try {
-        contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || {}, null, 2);
-      } catch {
-        contentStr = '[Unable to serialize content]';
-      }
+    // Smart logging: Only log message summaries, not full content (already logged by Planner)
+    const messageSummary = inputMessages
+      .map((msg, index) => {
+        const contentLength =
+          typeof msg.content === 'string'
+            ? msg.content.length
+            : typeof msg.content === 'object'
+              ? JSON.stringify(msg.content || {}).length
+              : 0;
+        return `[${index}] ${msg.constructor.name} (${contentLength} chars)`;
+      })
+      .join(', ');
 
-      logger.infoDetailed(`🤖 Navigator Input Message ${index}:`, {
-        type: msg.constructor.name,
-        contentType: typeof msg.content,
-        contentLength: contentStr.length,
-        hasToolCalls: 'tool_calls' in msg ? !!msg.tool_calls : false,
-        toolCallsCount: 'tool_calls' in msg ? (Array.isArray(msg.tool_calls) ? msg.tool_calls.length : 0) : 0,
-        fullContent: contentStr,
-      });
-    });
+    logger.info(`🤖 Navigator processing ${inputMessages.length} messages: ${messageSummary}`);
 
     // Add timeout and retry logic for LLM invocation
     let modelOutput: this['ModelOutput'] | null = null;
@@ -568,14 +564,11 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           throw new Error('LLM output missing action field');
         }
 
-        // Debug: Log COMPLETE LLM output
-        logger.infoDetailed('🤖 Navigator LLM Output - FULL TRACE:', {
-          hasCurrentState: !!modelOutput.current_state,
-          actionCount: modelOutput.action?.length || 0,
-          fullCurrentState: modelOutput.current_state || null,
-          fullActions: modelOutput.action || [],
-          rawModelOutput: modelOutput,
-        });
+        // Smart logging: Log key output info without full content dump
+        logger.info(`🤖 Navigator LLM Output: ${modelOutput.action?.length || 0} actions planned`);
+        if (modelOutput.current_state?.next_goal) {
+          logger.info(`🎯 Next goal: ${modelOutput.current_state.next_goal}`);
+        }
 
         logger.info(`✅ Navigator LLM invocation successful on attempt ${attempt}`);
         break; // Success, exit retry loop
@@ -632,14 +625,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
     const done = actionResults.length > 0 && actionResults[actionResults.length - 1].isDone;
 
-    // Debug: Log the reasoning being returned
-    if (modelOutput.current_state) {
-      logger.infoDetailed('🧠 Navigator reasoning captured:', {
-        evaluation_previous_goal: modelOutput.current_state.evaluation_previous_goal,
-        reasoning: modelOutput.current_state.reasoning,
-        memory: modelOutput.current_state.memory,
-        next_goal: modelOutput.current_state.next_goal,
-      });
+    // Only log reasoning in debug mode or on errors
+    if (modelOutput.current_state?.evaluation_previous_goal?.includes('Failed')) {
+      logger.warning(`⚠️ Previous goal failed: ${modelOutput.current_state.evaluation_previous_goal}`);
     }
 
     return { done, cancelled: false, reasoning: modelOutput.current_state };

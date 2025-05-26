@@ -118,24 +118,32 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         useVisionForPlanner: this.context.options.useVisionForPlanner,
       });
 
-      // Log each message separately for full traceability
-      plannerMessages.forEach((msg, index) => {
-        let contentStr: string;
-        try {
-          contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2);
-        } catch {
-          contentStr = '[Unable to serialize content]';
-        }
+      // Smart logging: Only log full content for the latest state message (most important for debugging)
+      const messageSummary = plannerMessages
+        .map((msg, index) => {
+          const contentLength =
+            typeof msg.content === 'string'
+              ? msg.content.length
+              : typeof msg.content === 'object'
+                ? JSON.stringify(msg.content || {}).length
+                : 0;
+          return `[${index}] ${msg.constructor.name} (${contentLength} chars)`;
+        })
+        .join(', ');
 
-        logger.infoDetailed(`🧠 Planner Input Message ${index}:`, {
-          type: msg.constructor.name,
-          contentType: typeof msg.content,
-          contentLength: contentStr.length,
-          hasToolCalls: 'tool_calls' in msg ? !!msg.tool_calls : false,
-          toolCallsCount: 'tool_calls' in msg ? (Array.isArray(msg.tool_calls) ? msg.tool_calls.length : 0) : 0,
-          fullContent: contentStr,
+      logger.info(`🧠 Planner processing ${plannerMessages.length} messages: ${messageSummary}`);
+
+      // Only log full content of the current state (last message) for debugging
+      if (plannerMessages.length > 0) {
+        const lastMsg = plannerMessages[plannerMessages.length - 1];
+        const lastContentStr =
+          typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content || {}, null, 2);
+        logger.infoDetailed(`🧠 Current State (Message ${plannerMessages.length - 1}):`, {
+          type: lastMsg.constructor.name,
+          contentLength: lastContentStr.length,
+          fullContent: lastContentStr.substring(0, 1000) + (lastContentStr.length > 1000 ? '...[truncated]' : ''),
         });
-      });
+      }
 
       const modelOutput = await this.invoke(plannerMessages);
       if (!modelOutput) {
@@ -148,19 +156,20 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         // Don't throw error, but log warning for debugging
       }
 
-      // Debug: Log COMPLETE LLM output
-      logger.infoDetailed('🧠 Planner LLM Output - FULL TRACE:', {
-        fullModelOutput: modelOutput,
-        observation: modelOutput.observation,
-        challenges: modelOutput.challenges,
-        done: modelOutput.done,
-        next_steps: modelOutput.next_steps,
-        reasoning: modelOutput.reasoning,
-        web_task: modelOutput.web_task,
-        page_elements: modelOutput.page_elements,
-        observationDataSource_urls: modelOutput.observationDataSource_urls,
-        observationDataSource_descriptions: modelOutput.observationDataSource_descriptions,
-      });
+      // Smart logging: Log key planning decisions without full content dump
+      logger.info(
+        `🧠 Planner Output: ${modelOutput.done ? 'TASK COMPLETE' : 'CONTINUING'} | Web task: ${modelOutput.web_task}`,
+      );
+      if (modelOutput.challenges) {
+        logger.info(
+          `⚠️ Challenges identified: ${modelOutput.challenges.substring(0, 200)}${modelOutput.challenges.length > 200 ? '...' : ''}`,
+        );
+      }
+      if (modelOutput.next_steps) {
+        logger.info(
+          `📋 Next steps: ${modelOutput.next_steps.substring(0, 300)}${modelOutput.next_steps.length > 300 ? '...' : ''}`,
+        );
+      }
       // Note: Plan is added to message history by the Executor, not here
       // this.context.messageManager.addPlan(modelOutput.next_steps); // REMOVED: Duplicate plan addition
       this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_OK, 'Planning successful', undefined, modelOutput);
